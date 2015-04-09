@@ -1,0 +1,9 @@
+#!/bin/bash
+CC="gcc -g"
+CFLAGS="-lSDL2 -lGLEW -lGL -lGLU -lm -lpthread -lX11"
+COPT="-O2 -march=native -mtune=native"
+
+SOURCE="*.c"
+OUTPUT="meshviewer"
+
+$CC $COPT $CFLAGS $SOURCE -o $OUTPUT
