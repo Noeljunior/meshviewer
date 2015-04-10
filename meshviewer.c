@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-//#include <pthread.h>
+#include <pthread.h>
 
 /* GLLIBS */
 #include <GL/glew.h>
@@ -127,7 +127,7 @@ void * inthread(void * none) {
     mv_init();
     mv_draw();
     printinfo("Leaving render thread");
-    pthread_exit();
+    pthread_exit(NULL);
 }
 
 void mv_init() {
