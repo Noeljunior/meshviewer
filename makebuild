@@ -1,5 +1,11 @@
 #!/bin/bash
-CC="gcc -g"
+CC="gcc"
+
+if [ "$1" == "++" ]; then
+    CC="g++";
+    echo $1
+fi
+
 CFLAGS="-lSDL2 -lGLEW -lGL -lGLU -lm -lpthread -lX11"
 COPT="-O2 -march=native -mtune=native"
 

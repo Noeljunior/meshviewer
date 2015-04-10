@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+//#include <pthread.h>
 
 /* GLLIBS */
 #include <GL/glew.h>
@@ -100,15 +101,15 @@ Uint32          timer_countfps  (Uint32 interval, void* param);
 void            renderloop      ();
 void            render_ro       (renderobj * ro);
 int             add_ro          (renderobj * ro);
-program *       new_program     (char * vertexsource, char * fragmentsource);
+program *       new_program     (const char * vertexsource, const char * fragmentsource);
 program *       new_program_default();
 object *        new_buffer      (GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti);
 
 renderobj *     new_ro_selbox   ();
 void            sb_dozoom();
 
-void            transform_triangles_in_lines(GLuint ** pindices, int * pcounti, int countv);
-void            transform_triangles_in_points(GLuint ** pindices, int * pcounti, int countv);
+void            transform_triangles_in_lines(GLuint ** pindices, unsigned int * pcounti, int countv);
+void            transform_triangles_in_points(GLuint ** pindices, unsigned int * pcounti, int countv);
 
 /* * * * * * * * * * * * * * * * * *
  *  THE MESH VIEWER
@@ -375,7 +376,7 @@ Uint32 timer_countfps(Uint32 interval, void* param) {
  *  THE RENDER
  * * * * * * * * * * * * * * * * * */
 
-float a = -90;
+float a = 0;//-90;
 void renderloop() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glViewport (0, 0, curWidth, curHeight);
@@ -455,7 +456,7 @@ int add_ro(renderobj * ro) {
     return allocatedRO - 1;
 }
 
-program *  new_program(char * vertexsource, char * fragmentsource) {
+program *  new_program(const char * vertexsource, const char * fragmentsource) {
     GLuint vertexshader = glCreateShader(GL_VERTEX_SHADER);
 
     /* VERTEX SHADER */
@@ -471,7 +472,7 @@ program *  new_program(char * vertexsource, char * fragmentsource) {
        glGetShaderInfoLog(vertexshader, maxLength, &maxLength, vertexInfoLog);
        printe("%s Shader/Vertex: %s\n", ERRPRE, vertexInfoLog);
        free(vertexInfoLog);
-       return;
+       return NULL;
     }
 
     /* FRAGMENT SHADER */
@@ -487,7 +488,7 @@ program *  new_program(char * vertexsource, char * fragmentsource) {
        glGetShaderInfoLog(fragmentshader, maxLength, &maxLength, fragmentInfoLog);
        printe("%s Shader/Fragment: %s\n", ERRPRE, fragmentInfoLog);
        free(fragmentInfoLog);
-       return;
+       return NULL;
     }
 
     /* PROGRAM */
@@ -509,7 +510,7 @@ program *  new_program(char * vertexsource, char * fragmentsource) {
         glGetProgramInfoLog(shaderprogram, maxLength, &maxLength, shaderProgramInfoLog);
         printe("%s Shader/Program: %s\n", ERRPRE, shaderProgramInfoLog);
         free(shaderProgramInfoLog);
-        return;
+        return NULL;
     }
 
     program * prog       = (program *) malloc(sizeof(program));
@@ -521,7 +522,7 @@ program *  new_program(char * vertexsource, char * fragmentsource) {
 }
 
 program *  new_program_default() {
-    char * vs = "\
+    const char * vs = "\
         #version 120\n\
         attribute vec4 in_Color;\n\
         void main() {\n\
@@ -529,7 +530,7 @@ program *  new_program_default() {
 	        gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;\n\
         }\n\
         ";
-    char * fs = "\
+    const char * fs = "\
         #version 120\n\
         void main() {\n\
 	        gl_FragColor = gl_Color;\n\
@@ -641,7 +642,7 @@ int mv_add(MVprimitive primitive, GLfloat * vertices, unsigned int countv, GLuin
 
         case MV_2D_TRIANGLES_AS_LINES:  mode = GL_LINES;     break;
         case MV_2D_TRIANGLES_AS_POINTS: mode = GL_POINTS;    break;
-        default: return;/* NOT IMPLEMENT / BAD ARGUMENT */
+        default: return -1;/* NOT IMPLEMENT / BAD ARGUMENT */
     }
 
     /* Transform the indices for minimize the number of drawed elements */
@@ -654,9 +655,12 @@ int mv_add(MVprimitive primitive, GLfloat * vertices, unsigned int countv, GLuin
     GLfloat * colours = (GLfloat *) malloc(sizeof(GLfloat) * countv * 3);
     int i;
     for (i = 0; i < countv * 3; i += 3) {
-        colours[i]   = colour[0];
+        /*colours[i]   = colour[0];
         colours[i+1] = colour[1];
-        colours[i+2] = colour[2];
+        colours[i+2] = colour[2];*/
+        colours[i]   = random() / (float)RAND_MAX;
+        colours[i+1] = random() / (float)RAND_MAX;
+        colours[i+2] = random() / (float)RAND_MAX;
     }
 
     totalpoints += counti;
@@ -664,7 +668,7 @@ int mv_add(MVprimitive primitive, GLfloat * vertices, unsigned int countv, GLuin
 }
 
 
-void transform_triangles_in_lines(GLuint ** pindices, int * pcounti, int countv) {
+void transform_triangles_in_lines(GLuint ** pindices, unsigned int * pcounti, int countv) {
     /* transform triangles in edges */
     GLuint * indices = *pindices;
     int      counti  = *pcounti;
@@ -737,7 +741,7 @@ void transform_triangles_in_lines(GLuint ** pindices, int * pcounti, int countv)
     *pcounti  = ttitems * 2;
 }
 
-void transform_triangles_in_points(GLuint ** pindices, int * pcounti, int countv) {
+void transform_triangles_in_points(GLuint ** pindices, unsigned int * pcounti, int countv) {
     GLuint * indices = *pindices;
     int      counti  = *pcounti;
 
