@@ -8,7 +8,18 @@
 #define MV_ZOOMDEFAULT  64
 
 /* Maximum objects allowed simultaneously */
-#define MV_MAXOBJECTS   32      /* TODO make it dynamic, later... */
+#define MV_MAXOBJECTS   32
+
+
+/* TODO list
+    - zoom min and zoom max
+    - pan min/max
+    - keybind to std zoom
+    - free everything when stoping
+    - make number of objects dynamic
+    - write help
+    - animations by time and not by frames
+*/
 
 typedef enum _MVprimitive {
     /* vertices: an unidimensional float array, each two consecutive represents a (x, y) coordinate
@@ -59,8 +70,11 @@ void    mv_draw();
 
 void    mv_show(int id);
 void    mv_hide(int id);
+void    mv_setscale(int id, float scale);
+void    mv_settranslate(int id, float x, float y);
+void    mv_setrotate(int id, float angle);
 
-int     mv_add(MVprimitive primitive, GLfloat * vertices, unsigned int countv, GLuint * indices, unsigned int counti, float * colour, float width, int * id);
+int     mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int * id);
 
 extern float mv_white[];
 extern float mv_gray[];

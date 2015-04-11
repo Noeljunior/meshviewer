@@ -28,6 +28,7 @@
 typedef enum _evtype {
     /* control events */
     EV_CREATEOBJ     = 1,
+    EV_SETPROPERTY   = 2,
 
     /* render events */
     EV_RENDER         = 100,
@@ -50,8 +51,12 @@ typedef struct program {
 typedef struct renderobj {
     program     *prog;
     object      *obj;
+    GLfloat     scale,
+                translate[2],
+                rotate;
     int         enable;
 } renderobj;
+//typedef enum ev_esp { EV_SP_VISIBILITY, EV_SP_SCALE, EV_SP_TRANSLATE, EV_SP_ROTATE, } ev_esp;
 
 
 /* * * * * * * * * * GL ENV * * * * * * * * * */
@@ -95,6 +100,9 @@ void            ev_mouse        (SDL_Event event);
 void            ev_renderloop   (void* data1, void* data2);
 void            ev_createobj    (void* data1, void* data2);
 void            eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int * id);
+/*void            ev_setproperty  (void* data1, void* data2);
+void            eve_setproperty (ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate);
+*/
 
 Uint32          timer_countfps  (Uint32 interval, void* param);
 
@@ -172,8 +180,9 @@ void mv_init() {
     SDL_AddTimer(1000, timer_countfps, 0);
     
     /* SDL Register the events */
-    ev_add(EV_RENDER,    ev_renderloop);
-    ev_add(EV_CREATEOBJ, ev_createobj);
+    ev_add(EV_RENDER,      ev_renderloop);
+    ev_add(EV_CREATEOBJ,   ev_createobj);
+    //ev_add(EV_SETPROPERTY, ev_setproperty);
     
     
     /* Prepare the render stuff */
@@ -217,19 +226,10 @@ void mv_draw() {
         }
     }
     SDL_Quit();
-    printi("%s It was drawing %lld points\n", INFOPRE, totalpoints);
+
 }
 
-void mv_show(int id) {
-    if (id >= allocatedRO || renderobjs[id] == NULL)
-        return;
-    renderobjs[id]->enable = 1;
-}
-void mv_hide(int id) {
-    if (id >= allocatedRO || renderobjs[id] == NULL)
-        return;
-    renderobjs[id]->enable = 0;
-}
+
 
 /* * * * * * * * * * * * * * * * * *
  *  THE EVENTS
@@ -252,7 +252,7 @@ void ev_emit(int code, void* data1, void* data2) {
 int eegg = 0;
 void ev_keyboard(int type, SDL_Keysym keysym) {
 
-    if (type == 1 && modalt) printf("Key%s: %d\n", type == KDOWN ? "down" : "up", keysym.sym);/**/
+    /*if (type == 1 && modalt) printf("Key%s: %d\n", type == KDOWN ? "down" : "up", keysym.sym);/**/
     
     if (keysym.sym == 1073742049 || keysym.sym == 1073742053) modshift = type; /* Shift */
     if (keysym.sym == 1073742048 || keysym.sym == 1073742052) modctrl  = type; /* Control */
@@ -308,6 +308,7 @@ void ev_renderloop(void* data1, void* data2) {
     renderloop();
 }
 
+/* CREATE OBJECT EVENT  */
 typedef struct ev_object {
     GLenum mode;
     GLfloat * vertices, * colours;
@@ -330,12 +331,17 @@ void ev_createobj(void* data1, void* data2) {
     ro->obj = tobj;
     ro->prog = defprog[0];
 
+    ro->scale        = 1.0;
+    ro->translate[0] = 0.0;
+    ro->translate[1] = 0.0;
+    ro->rotate       = 0.0;
+
     ro->enable = 1;
     tobj->width = obj->width;
 
     int id = add_ro(ro);
     if (data2 != NULL) *((int *)data2) = id;
-    printinfo("New object added");
+    printi("%s New object added. Now drawing %lld points\n", INFOPRE, totalpoints);
 
     free(obj->vertices);
     free(obj->colours);
@@ -358,7 +364,33 @@ void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size,
     ev_emit(EV_CREATEOBJ, obj, id);
 }
 
+/* SET PROPERTIES EVENT */
+/*typedef struct ev_setproperty {
+    unsigned int    id;
+    ev_esp          change;
+    char            visibility;
+    float           scale,
+                    translate[2],
+                    rotate;
+} ev_setproperty;
 
+void ev_setproperty(void* data1, void* data2) {
+    ev_setproperty * sp = (ev_setproperty*) data1;
+    
+    
+    free(data1);
+}
+void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate) {
+    ev_setproperty * obj = (ev_setproperty *) malloc(sizeof(ev_setproperty));
+    obj->id           = id;
+    obj->change       = change;
+    obj->visibility   = visibility;
+    obj->scale        = scale;
+    obj->translate[0] = translatex;
+    obj->translate[1] = translatey;
+    obj->rotate       = rotate;
+    ev_emit(EV_SETPROPERTY, obj, NULL);
+}*/
 /* * * * * * * * * * * * * * * * * *
  *  THE TIMERS
  * * * * * * * * * * * * * * * * * */
@@ -376,7 +408,7 @@ Uint32 timer_countfps(Uint32 interval, void* param) {
  *  THE RENDER
  * * * * * * * * * * * * * * * * * */
 
-float a = 0;//-90;
+float a = -90;
 void renderloop() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glViewport (0, 0, curWidth, curHeight);
@@ -432,7 +464,7 @@ void render_ro(renderobj * ro) {
     glUseProgram(ro->prog->shaderprogram);
     glBindVertexArray(ro->obj->vao);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ro->obj->ibo);
-    
+
     if (ro->obj->width > 0) {
         glPointSize(ro->obj->width);
         glLineWidth(ro->obj->width);
@@ -441,10 +473,14 @@ void render_ro(renderobj * ro) {
         glPointSize(1.0);
         glLineWidth(1.0);
     }
-        
-    
-    glDrawElements(ro->obj->mode, ro->obj->ibos, GL_UNSIGNED_INT, NULL);
-    
+
+    glPushMatrix();
+        glScalef(-ro->scale, ro->scale, 1.0);
+        glRotatef(ro->rotate, 0, 0, 1);
+        glTranslatef(ro->translate[0], ro->translate[1], 0.0);
+        glDrawElements(ro->obj->mode, ro->obj->ibos, GL_UNSIGNED_INT, NULL);
+    glPopMatrix();
+
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
     glUseProgram(0);
@@ -594,6 +630,10 @@ renderobj * new_ro_selbox() {
     ro->obj = tobj;
     ro->prog = defprog[0];
     
+    ro->scale        = 1.0;
+    ro->translate[0] = 0.0;
+    ro->translate[1] = 0.0;
+    ro->rotate       = 0.0;
     free(colours);
     ro->enable = 1;
 
@@ -619,7 +659,7 @@ void sb_dozoom() {
 
 
 /* * * * * * * * * * * * * * * * * *
- *  THE ADDNERS AND STD COLOURS
+ *  THE ADDNERS AND STD COLOURS, PUBLIC API
  * * * * * * * * * * * * * * * * * */
 float mv_white[]    = { 1.0, 1.0, 1.0 };
 float mv_gray[]     = { 0.5, 0.5, 0.5 };
@@ -631,7 +671,34 @@ float mv_pink[]     = { 1.0, 0.0, 1.0 };
 float mv_yellow[]   = { 1.0, 1.0, 0.0 };
 float mv_cyan[]     = { 0.0, 1.0, 1.0 };
 
-int mv_add(MVprimitive primitive, GLfloat * vertices, unsigned int countv, GLuint * indices, unsigned int counti, float * colour, float width, int * id) {
+void mv_show(int id) {
+    if (id >= allocatedRO || renderobjs[id] == NULL)
+        return;
+    renderobjs[id]->enable = 1;
+}
+void mv_hide(int id) {
+    if (id >= allocatedRO || renderobjs[id] == NULL)
+        return;
+    renderobjs[id]->enable = 0;
+}
+void mv_setscale(int id, float scale) {
+    if (id >= allocatedRO || renderobjs[id] == NULL)
+        return;
+    renderobjs[id]->scale = scale;
+}
+void mv_settranslate(int id, float x, float y) {
+    if (id >= allocatedRO || renderobjs[id] == NULL)
+        return;
+    renderobjs[id]->translate[0] = x;
+    renderobjs[id]->translate[1] = y;
+}
+void mv_setrotate(int id, float angle) {
+    if (id >= allocatedRO || renderobjs[id] == NULL)
+        return;
+    renderobjs[id]->rotate = angle;
+}
+
+int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int * id) {
     GLenum mode;
 
     /* Set the GL primitive */
@@ -655,12 +722,12 @@ int mv_add(MVprimitive primitive, GLfloat * vertices, unsigned int countv, GLuin
     GLfloat * colours = (GLfloat *) malloc(sizeof(GLfloat) * countv * 3);
     int i;
     for (i = 0; i < countv * 3; i += 3) {
-        /*colours[i]   = colour[0];
+        colours[i]   = colour[0];
         colours[i+1] = colour[1];
-        colours[i+2] = colour[2];*/
-        colours[i]   = random() / (float)RAND_MAX;
+        colours[i+2] = colour[2];/**/
+        /*colours[i]   = random() / (float)RAND_MAX;
         colours[i+1] = random() / (float)RAND_MAX;
-        colours[i+2] = random() / (float)RAND_MAX;
+        colours[i+2] = random() / (float)RAND_MAX;/**/
     }
 
     totalpoints += counti;
