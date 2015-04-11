@@ -39,7 +39,7 @@
 
 /* * * * * * * * * * TYPES * * * * * * * * * */
 typedef enum _evtype {
-    /* control events */
+    /* objects events */
     EV_CREATEOBJ     = 1,
     EV_SETPROPERTY   = 2,
 
@@ -69,7 +69,7 @@ typedef struct renderobj {
                 rotate;
     int         enable;
 } renderobj;
-//typedef enum ev_esp { EV_SP_VISIBILITY, EV_SP_SCALE, EV_SP_TRANSLATE, EV_SP_ROTATE, } ev_esp;
+typedef enum ev_esp { EV_SP_VISIBILITY, EV_SP_SCALE, EV_SP_TRANSLATE, EV_SP_ROTATE, } ev_esp;
 
 
 /* * * * * * * * * * GL ENV * * * * * * * * * */
@@ -113,9 +113,9 @@ void            ev_mouse        (SDL_Event event);
 void            ev_renderloop   (void* data1, void* data2);
 void            ev_createobj    (void* data1, void* data2);
 void            eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int * id);
-/*void            ev_setproperty  (void* data1, void* data2);
+void            ev_setproperty  (void* data1, void* data2);
 void            eve_setproperty (ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate);
-*/
+
 
 Uint32          timer_countfps  (Uint32 interval, void* param);
 
@@ -195,7 +195,7 @@ void mv_init() {
     /* SDL Register the events */
     ev_add(EV_RENDER,      ev_renderloop);
     ev_add(EV_CREATEOBJ,   ev_createobj);
-    //ev_add(EV_SETPROPERTY, ev_setproperty);
+    ev_add(EV_SETPROPERTY, ev_setproperty);
     
     
     /* Prepare the render stuff */
@@ -328,6 +328,7 @@ typedef struct ev_object {
     GLuint * indices;
     int size, countv, countc, counti;
     GLfloat width;
+    pthread_mutex_t *mutex;
 } ev_object;
 
 void ev_createobj(void* data1, void* data2) {
@@ -336,24 +337,20 @@ void ev_createobj(void* data1, void* data2) {
         printerr("Trying to add an object but the list of objects is full");
         return;
     }
-
     ev_object * obj = (ev_object *) data1;
-
-    object * tobj  = new_buffer(obj->mode, obj->vertices, obj->colours, obj->size, obj->countv, obj->countc, obj->indices, obj->counti);
     renderobj * ro = (renderobj *) malloc(sizeof(renderobj));
-    ro->obj = tobj;
-    ro->prog = defprog[0];
+    int id = add_ro(ro);
+    if (data2 != NULL) *((int *)data2) = id;
 
+    ro->obj          = new_buffer(obj->mode, obj->vertices, obj->colours, obj->size, obj->countv, obj->countc, obj->indices, obj->counti);;
+    ro->prog         = defprog[0];
     ro->scale        = 1.0;
     ro->translate[0] = 0.0;
     ro->translate[1] = 0.0;
     ro->rotate       = 0.0;
-
     ro->enable = 1;
-    tobj->width = obj->width;
+    ro->obj->width = obj->width;
 
-    int id = add_ro(ro);
-    if (data2 != NULL) *((int *)data2) = id;
     totalpoints += obj->counti;
     printi("%s New object added. Now drawing %lld points\n", INFOPRE, totalpoints);
 
@@ -361,41 +358,75 @@ void ev_createobj(void* data1, void* data2) {
     free(obj->colours);
     free(obj->indices);
 
+    if (pthread_mutex_unlock(obj->mutex) != 0)
+        printerr("Error while creating a new object: couldn't release the mutex; it's time to a deadlock!");
     free(data1);
 }
 
 void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int * id) {
     ev_object * obj = (ev_object *) malloc(sizeof(ev_object));
-    obj->mode       = mode;
-    obj->vertices   = vertices;
-    obj->colours    = colours;
-    obj->indices    = indices;
-    obj->size       = size;
-    obj->countv     = countv;
-    obj->countc     = countc;
-    obj->counti     = counti;
-    obj->width      = width;
-    ev_emit(EV_CREATEOBJ, obj, id);
+
+    pthread_mutex_t mutex;
+    if (pthread_mutex_init(&mutex, NULL) != 0) {
+        printerr("Error while creating a new object: couldn't create the mutex");
+        return;
+    }
+
+    if (pthread_mutex_lock(&mutex) == 0) {
+        obj->mode       = mode;
+        obj->vertices   = vertices;
+        obj->colours    = colours;
+        obj->indices    = indices;
+        obj->size       = size;
+        obj->countv     = countv;
+        obj->countc     = countc;
+        obj->counti     = counti;
+        obj->width      = width;
+        obj->mutex      = &mutex;
+        ev_emit(EV_CREATEOBJ, obj, id);
+
+        if (pthread_mutex_lock(&mutex) != 0)
+            printerr("Error while creating a new object: couldn't wait for the creation of the object");
+    } else
+        printerr("Error while creating a new object: couldn't lock mutex");
+
+    pthread_mutex_destroy(&mutex);
 }
 
 /* SET PROPERTIES EVENT */
-/*typedef struct ev_setproperty {
+typedef struct ev_property {
     unsigned int    id;
     ev_esp          change;
     char            visibility;
     float           scale,
                     translate[2],
                     rotate;
-} ev_setproperty;
+} ev_property;
 
 void ev_setproperty(void* data1, void* data2) {
-    ev_setproperty * sp = (ev_setproperty*) data1;
-    
-    
+    ev_property * sp = (ev_property*) data1;
+    if (sp->id >= allocatedRO || renderobjs[sp->id] == NULL)
+        return;
+    switch (sp->change) {
+        case EV_SP_VISIBILITY:
+            renderobjs[sp->id]->enable = sp->visibility;
+            break;
+        case EV_SP_SCALE:
+            renderobjs[sp->id]->scale = sp->scale;
+            break;
+        case EV_SP_TRANSLATE:EV_SP_SCALE:
+            renderobjs[sp->id]->translate[0] = sp->translate[0];
+            renderobjs[sp->id]->translate[1] = sp->translate[1];
+            break;
+        case EV_SP_ROTATE:
+            renderobjs[sp->id]->rotate = sp->rotate;
+            break;
+        default: break; /* invalid or not implement property */
+    }
     free(data1);
 }
 void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate) {
-    ev_setproperty * obj = (ev_setproperty *) malloc(sizeof(ev_setproperty));
+    ev_property * obj = (ev_property *) malloc(sizeof(ev_property));
     obj->id           = id;
     obj->change       = change;
     obj->visibility   = visibility;
@@ -404,7 +435,7 @@ void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scal
     obj->translate[1] = translatey;
     obj->rotate       = rotate;
     ev_emit(EV_SETPROPERTY, obj, NULL);
-}*/
+}
 /* * * * * * * * * * * * * * * * * *
  *  THE TIMERS
  * * * * * * * * * * * * * * * * * */
@@ -441,16 +472,10 @@ void renderloop() {
              (-curHeight/2.0)  / cz - cy,
              (curHeight/2.0)   / cz - cy,
              -10.0, 10.0);
-    /*printf("%6.2f %6.2f %6.2f %6.2f\n",
-             (-curWidth/2.0)   / cz - cx,
-             (curWidth/2.0)    / cz - cx,
-             (-curHeight/2.0)  / cz - cy,
-             (curHeight/2.0)   / cz - cy);*/
     
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     
-    /*glRotatef(-90, 0, 0, 1);/**/
     glRotatef(a, 0, 0, 1);/**/
     a += eegg;
     
@@ -692,30 +717,19 @@ float mv_yellow[]   = { 1.0, 1.0, 0.0 };
 float mv_cyan[]     = { 0.0, 1.0, 1.0 };
 
 void mv_show(int id) {
-    if (id >= allocatedRO || renderobjs[id] == NULL)
-        return;
-    renderobjs[id]->enable = 1;
+    eve_setproperty(EV_SP_VISIBILITY, id, 1, 0, 0, 0, 0);
 }
 void mv_hide(int id) {
-    if (id >= allocatedRO || renderobjs[id] == NULL)
-        return;
-    renderobjs[id]->enable = 0;
+    eve_setproperty(EV_SP_VISIBILITY, id, 0, 0, 0, 0, 0);
 }
 void mv_setscale(int id, float scale) {
-    if (id >= allocatedRO || renderobjs[id] == NULL)
-        return;
-    renderobjs[id]->scale = scale;
+    eve_setproperty(EV_SP_SCALE, id, 0, scale, 0, 0, 0);
 }
 void mv_settranslate(int id, float x, float y) {
-    if (id >= allocatedRO || renderobjs[id] == NULL)
-        return;
-    renderobjs[id]->translate[0] = x;
-    renderobjs[id]->translate[1] = y;
+    eve_setproperty(EV_SP_TRANSLATE, id, 0, 0, x, y, 0);
 }
 void mv_setrotate(int id, float angle) {
-    if (id >= allocatedRO || renderobjs[id] == NULL)
-        return;
-    renderobjs[id]->rotate = angle;
+    eve_setproperty(EV_SP_ROTATE, id, 0, 0, 0, 0, angle);
 }
 
 int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int * id) {
