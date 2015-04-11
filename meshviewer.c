@@ -423,7 +423,7 @@ Uint32 timer_countfps(Uint32 interval, void* param) {
  *  THE RENDER
  * * * * * * * * * * * * * * * * * */
 
-float a = -90;
+float a = 0;
 void renderloop() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glViewport (0, 0, curWidth, curHeight);
@@ -442,6 +442,12 @@ void renderloop() {
              (-curHeight/2.0)  / cz - cy,
              (curHeight/2.0)   / cz - cy,
              -10.0, 10.0);
+    /*printf("%6.2f %6.2f %6.2f %6.2f\n",
+             (-curWidth/2.0)   / cz - cx,
+             (curWidth/2.0)    / cz - cx,
+             (-curHeight/2.0)  / cz - cy,
+             (curHeight/2.0)   / cz - cy);*/
+    
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     
@@ -490,7 +496,7 @@ void render_ro(renderobj * ro) {
     }
 
     glPushMatrix();
-        glScalef(-ro->scale, ro->scale, 1.0);
+        glScalef(ro->scale, ro->scale, 1.0);
         glRotatef(ro->rotate, 0, 0, 1);
         glTranslatef(ro->translate[0], ro->translate[1], 0.0);
         glDrawElements(ro->obj->mode, ro->obj->ibos, GL_UNSIGNED_INT, NULL);
