@@ -10,17 +10,6 @@
 /* Maximum objects allowed simultaneously */
 #define MV_MAXOBJECTS   32
 
-
-/* TODO list
-    - zoom min and zoom max
-    - pan min/max
-    - keybind to std zoom
-    - free everything when stoping
-    - make number of objects dynamic
-    - write help
-    - animations by time and not by frames
-*/
-
 typedef enum _MVprimitive {
     /* vertices: an unidimensional float array, each two consecutive represents a (x, y) coordinate
      *           float[] vertices = { x0, y0,  x1, y1,  x2, y2, ... }

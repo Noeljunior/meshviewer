@@ -23,6 +23,19 @@
 #define KDOWN           0
 #define KUP             1
 
+/* TODO list
+    - coordinate system seems to be completly messed up
+    - mv_setproperty as an event!
+    - when zoom with right click, if box is 0,0 it scales by zero
+    - animations by time and not by frames
+    - keybind to std zoom
+    - double click to zoom at click
+    - free everything when stoping
+    - make number of objects dynamic
+    - zoom min and zoom max
+    - pan min/max
+    - write help
+*/
 
 /* * * * * * * * * * TYPES * * * * * * * * * */
 typedef enum _evtype {
