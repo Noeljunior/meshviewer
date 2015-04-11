@@ -24,7 +24,6 @@
 #define KUP             1
 
 /* TODO list
-    - mv_setproperty as an event!
     - when zoom with right click, if box is 0,0 it scales by zero
     - animations by time and not by frames
     - add mv_add_function()
@@ -35,6 +34,8 @@
     - zoom min and zoom max
     - pan min/max
     - write help
+    
+    - zoom var resolution
 */
 
 /* * * * * * * * * * TYPES * * * * * * * * * */
@@ -97,9 +98,9 @@ int                 sb_isshow,
 /* Keyboard and mouse */
 int                 modshift, modctrl, modalt;
 /* Camera position and zoom */
-GLfloat             cx,  cy,
+double              cx,  cy,
                     ctx, cty;
-GLfloat             cz,  ctz;
+double              cz,  ctz;
 float               zoom_factor = MV_ZOOMFACTOR;
 
 
@@ -688,16 +689,17 @@ renderobj * new_ro_selbox() {
 void sb_dozoom() {
     int w = (sb_fx - sb_ix),
         h = (sb_fy - sb_iy);
-    
-    if (curWidth / (float)w < curHeight / (float)h) {
-        ctz *= curWidth / (float)w;
+    if (w == 0 || h == 00) return;
+
+    if (curWidth / (float)abs(w) < curHeight / (float)abs(h)) {
+        ctz *= curWidth / (float)abs(w);
     } else {
-        ctz *= curHeight / (float)h;
+        ctz *= curHeight / (float)abs(h);
     }
-    
+
     w = curWidth/2 - (sb_ix + w / 2);
     h = curHeight/2 -(sb_iy + h / 2);
-    
+
     ctx += w / cz;
     cty -= h / cz;
 }
