@@ -6,6 +6,8 @@
 #define MV_ZOOMFACTOR   1.25
 /* The default zoom */
 #define MV_ZOOMDEFAULT  64
+/* The speed of pan and zoom animations; 0 disables the animations */
+#define MV_ANIMSPEED 1.0
 
 /* Maximum objects allowed simultaneously */
 #define MV_MAXOBJECTS   32

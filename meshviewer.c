@@ -24,8 +24,6 @@
 #define KUP             1
 
 /* TODO list
-    - when zoom with right click, if box is 0,0 it scales by zero
-    - animations by time and not by frames
     - add mv_add_function()
     - keybind to std zoom
     - double click to zoom at click
@@ -101,6 +99,7 @@ int                 modshift, modctrl, modalt;
 double              cx,  cy,
                     ctx, cty;
 double              cz,  ctz;
+double              az,  ap;
 float               zoom_factor = MV_ZOOMFACTOR;
 
 
@@ -128,7 +127,7 @@ program *       new_program_default();
 object *        new_buffer      (GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti);
 
 renderobj *     new_ro_selbox   ();
-void            sb_dozoom();
+void            sb_dozoom       ();
 
 void            transform_triangles_in_lines(GLuint ** pindices, unsigned int * pcounti, int countv);
 void            transform_triangles_in_points(GLuint ** pindices, unsigned int * pcounti, int countv);
@@ -278,7 +277,6 @@ void ev_keyboard(int type, SDL_Keysym keysym) {
     }
     
     if (keysym.sym == 97 && type == KDOWN) { // A
-
     }
 }
 
@@ -313,7 +311,7 @@ void ev_mouse(SDL_Event event) {
             break;
         case SDL_MOUSEWHEEL:
             if (evb->x > 0) ctz *= zoom_factor;
-            else           ctz /= zoom_factor;
+            else            ctz /= zoom_factor;
             break;
     }
 }
@@ -453,21 +451,37 @@ Uint32 timer_countfps(Uint32 interval, void* param) {
 /* * * * * * * * * * * * * * * * * *
  *  THE RENDER
  * * * * * * * * * * * * * * * * * */
+float   a     = 0;
+long    last  = 0;
+float   delta = 0.0;
 
-float a = 0;
 void renderloop() {
+    long now = SDL_GetTicks();
+    if (now > last) {
+	    delta = ((float)(now - last)) / 1000;
+	    last = now;
+    }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glViewport (0, 0, curWidth, curHeight);
     
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    /* translate smoothner */
-    cx += (ctx - cx) / 4.0;
-    cy += (cty - cy) / 4.0;
-    
-    /* scale smoothner */
-    cz += (ctz - cz) / 4.0;
-    
+    /* zoom and translate smoothner */
+    double animv    = delta * 20.0 * MV_ANIMSPEED;
+    float  stopanim = 0.1;
+    double dx = (ctx - cx),
+           dy = (cty - cy),
+           dz = (ctz - cz);
+
+    if (fabs(dz * animv) > fabs(dz) || fabs(dz * animv) < stopanim) cz = ctz;
+    else                                                            cz += dz * animv;
+
+
+    if (fabs(dx * animv) > fabs(dx) || fabs(dx * animv * cz) < stopanim) cx = ctx;
+    else                                                                 cx += dx * animv;
+    if (fabs(dy * animv) > fabs(dy) || fabs(dy * animv * cz) < stopanim) cy = cty;
+    else                                                                 cy += dy * animv;
+
      glOrtho((-curWidth/2.0)   / cz - cx,
              (curWidth/2.0)    / cz - cx,
              (-curHeight/2.0)  / cz - cy,
@@ -691,11 +705,10 @@ void sb_dozoom() {
         h = (sb_fy - sb_iy);
     if (w == 0 || h == 00) return;
 
-    if (curWidth / (float)abs(w) < curHeight / (float)abs(h)) {
+    if (curWidth / (float)abs(w) < curHeight / (float)abs(h))
         ctz *= curWidth / (float)abs(w);
-    } else {
+    else
         ctz *= curHeight / (float)abs(h);
-    }
 
     w = curWidth/2 - (sb_ix + w / 2);
     h = curHeight/2 -(sb_iy + h / 2);
