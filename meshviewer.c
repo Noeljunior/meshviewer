@@ -24,7 +24,6 @@
 #define KUP             1
 
 /* TODO list
-    - coordinate system seems to be completly messed up
     - mv_setproperty as an event!
     - when zoom with right click, if box is 0,0 it scales by zero
     - animations by time and not by frames
