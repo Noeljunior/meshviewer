@@ -8,11 +8,21 @@
 
 #include "meshviewer.h"
 
-float *        readn_FF(FILE * f, int *count);  /* Read n lines each containing two floats */
-float *        readn_FFi(FILE * f, int *count); /* Read n lines each containing two floats and one ignored int */
-unsigned int * readn_UU(FILE * f, int *count);  /* Read n lines each containing two unsigned ints */
-unsigned int * readn_UUU(FILE * f, int *count); /* Read n lines each containing three unsigned ints */
-void find_minmax_xyf(float * values, int size, float * minx, float * miny, float * maxx, float * maxy); /* finds the x and y mins and maxs */
+/* Read n lines each containing two floats */
+float *        readn_FF(FILE * f, unsigned int *count);
+
+/* Read n lines each containing two floats and one ignored int */
+float *        readn_FFi(FILE * f, unsigned int *count);
+
+/* Read n lines each containing two unsigned ints */
+unsigned int * readn_UU(FILE * f, unsigned int *count);
+
+/* Read n lines each containing three unsigned ints */
+unsigned int * readn_UUU(FILE * f, unsigned int *count);
+
+/* finds the x and y mins and maxs */
+void find_minmax_xyf(float * values, int size, float * minx, float * miny, float * maxx, float * maxy);
+
 
 void read_mesh(const char * path);      /* Reads gustavo's mesh */
 void read_mesh_pt(const char * path);   /* Reads the bernardo's portugal mesh */
@@ -42,7 +52,7 @@ int main (int argc, char ** argv) {
 
 
 /* Read n lines each containing two floats */
-float * readn_FF(FILE * f, int *count) {
+float * readn_FF(FILE * f, unsigned int *count) {
     int i, p;
     fscanf(f, "%d", count);
     float * values = (float *) malloc(sizeof(float) * *count * 2);
@@ -51,7 +61,7 @@ float * readn_FF(FILE * f, int *count) {
     return values;
 }
 /* Read n lines each containing two floats and one ignored int */
-float * readn_FFi(FILE * f, int *count) {
+float * readn_FFi(FILE * f, unsigned int *count) {
     int i, p, trash;
     fscanf(f, "%d", count);
     float * values = (float *) malloc(sizeof(float) * *count * 2);
@@ -61,7 +71,7 @@ float * readn_FFi(FILE * f, int *count) {
 }
 
 /* Read n lines each containing two unsigned ints */
-unsigned int * readn_UU(FILE * f, int *count) {
+unsigned int * readn_UU(FILE * f, unsigned int *count) {
     int i, p;
     fscanf(f, "%d", count);*count *= 2;
     unsigned int * values = (unsigned int *) malloc(sizeof(unsigned int) * *count);
@@ -70,7 +80,7 @@ unsigned int * readn_UU(FILE * f, int *count) {
     return values;
 }
 /* Read n lines each containing three unsigned ints */
-unsigned int * readn_UUU(FILE * f, int *count) {
+unsigned int * readn_UUU(FILE * f, unsigned int *count) {
     int i, p;
     fscanf(f, "%d", count);*count *= 3;
     unsigned int * values = (unsigned int *) malloc(sizeof(unsigned int) * *count);

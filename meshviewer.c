@@ -28,6 +28,7 @@
     - mv_setproperty as an event!
     - when zoom with right click, if box is 0,0 it scales by zero
     - animations by time and not by frames
+    - add mv_add_function()
     - keybind to std zoom
     - double click to zoom at click
     - free everything when stoping
