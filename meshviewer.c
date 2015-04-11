@@ -355,6 +355,7 @@ void ev_createobj(void* data1, void* data2) {
 
     int id = add_ro(ro);
     if (data2 != NULL) *((int *)data2) = id;
+    totalpoints += obj->counti;
     printi("%s New object added. Now drawing %lld points\n", INFOPRE, totalpoints);
 
     free(obj->vertices);
@@ -744,7 +745,6 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
         colours[i+2] = random() / (float)RAND_MAX;/**/
     }
 
-    totalpoints += counti;
     eve_createobj(mode, vertices, colours, countv, 2, 3, indices, counti, width, id);
 }
 
