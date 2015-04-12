@@ -24,7 +24,6 @@
 #define KUP             1
 
 /* TODO list
-    - add mv_add_function()
     - keybind to std zoom
     - double click to zoom at click
     - free everything when stoping
@@ -33,7 +32,8 @@
     - pan min/max
     - write help
     
-    - zoom var resolution
+    - add posibility of passing the borders to set custom colour
+    - emit render event after rendering a frame
 */
 
 /* * * * * * * * * * TYPES * * * * * * * * * */
@@ -152,38 +152,29 @@ void * inthread(void * none) {
 }
 
 void mv_init() {
-    /* Try to enable VBLANK */
-    putenv( (char *) "__GL_SYNC_TO_VBLANK=1");
-
     /* Init the GL env */
     SDL_Init(SDL_INIT_EVERYTHING);
 
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-    
-    /* Anti-aliasing */
-    /*SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);/**/
 
-    // SDL WINDOW
+    /* SDL WINDOW */
     window = SDL_CreateWindow(WINTITLE, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         curWidth, curHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 
-    SDL_GLContext glcontext = SDL_GL_CreateContext(window);
+    SDL_GL_CreateContext(window);
 
     /* * * * Init GLGlew * * * */
     GLenum result = glewInit();
     if (result != GLEW_OK) {
-        //SDL_Log("Glew error: %s\n", glewGetErrorString(result));
+        printe("%s %s\n", ERRPRE, "Glew error. Exiting");
         exit(-1);
     }
-    //SDL_Log("%s: %s\n", "OpenGL Version ", glGetString(GL_VERSION));
+    /*printi("%s %s %s\n", INFOPRE, "Using OpenGL version", glGetString(GL_VERSION));*/
     
     /* * * * Init OpenGL * * * */
     glEnable(GL_DEPTH_TEST | GL_LINE_SMOOTH | GL_POLYGON_SMOOTH | GL_ALPHA_TEST);
     glClearColor(0,0,0,1);
-    glLineWidth(1.0);
-    //glPointSize(3.0);
     
     glDepthMask(GL_FALSE);
     glEnable   (GL_BLEND);
@@ -211,10 +202,9 @@ void mv_draw() {
     ev_emit(EV_RENDER, NULL, NULL);
 
     while (running && SDL_WaitEvent(&event)) {
-        SDL_Keycode key;
         switch (event.type) {
             case SDL_USEREVENT:
-                if (ev_callbacks[event.user.code])        // is it allocated?
+                if (ev_callbacks[event.user.code])        /* is it allocated? */
                     (*ev_callbacks[event.user.code])(event.user.data1, event.user.data2);
                 break;
 
@@ -265,8 +255,8 @@ void ev_emit(int code, void* data1, void* data2) {
 int eegg = 0;
 void ev_keyboard(int type, SDL_Keysym keysym) {
 
-    /*if (type == 1 && modalt) printf("Key%s: %d\n", type == KDOWN ? "down" : "up", keysym.sym);/**/
-    
+    /*if (type == 1 && modalt) printf("Key%s: %d\n", type == KDOWN ? "down" : "up", keysym.sym);*/
+
     if (keysym.sym == 1073742049 || keysym.sym == 1073742053) modshift = type; /* Shift */
     if (keysym.sym == 1073742048 || keysym.sym == 1073742052) modctrl  = type; /* Control */
     if (keysym.sym == 1073742050 || keysym.sym == 1073742050) modalt   = type; /* Alt */
@@ -276,7 +266,7 @@ void ev_keyboard(int type, SDL_Keysym keysym) {
         else          running = 0;
     }
     
-    if (keysym.sym == 97 && type == KDOWN) { // A
+    if (keysym.sym == 97 && type == KDOWN) { /* A */
     }
 }
 
@@ -300,7 +290,7 @@ void ev_mouse(SDL_Event event) {
             }
             break;
         case SDL_MOUSEMOTION:
-            if (evm->state & 1 << SDL_BUTTON_LEFT-1) {
+            if (evm->state & 1 << (SDL_BUTTON_LEFT - 1)) {
                 ctx += evm->xrel / cz;
                 cty -= evm->yrel / cz;
             }
@@ -413,7 +403,7 @@ void ev_setproperty(void* data1, void* data2) {
         case EV_SP_SCALE:
             renderobjs[sp->id]->scale = sp->scale;
             break;
-        case EV_SP_TRANSLATE:EV_SP_SCALE:
+        case EV_SP_TRANSLATE:
             renderobjs[sp->id]->translate[0] = sp->translate[0];
             renderobjs[sp->id]->translate[1] = sp->translate[1];
             break;
@@ -758,7 +748,9 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
 
         case MV_2D_TRIANGLES_AS_LINES:  mode = GL_LINES;     break;
         case MV_2D_TRIANGLES_AS_POINTS: mode = GL_POINTS;    break;
-        default: return -1;/* NOT IMPLEMENT / BAD ARGUMENT */
+        default:
+            printerr("Error while creating a new object: bad primitive type");
+            return -1;/* NOT IMPLEMENT / BAD ARGUMENT */
     }
 
     /* Transform the indices for minimize the number of drawed elements */
@@ -773,15 +765,59 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
     for (i = 0; i < countv * 3; i += 3) {
         colours[i]   = colour[0];
         colours[i+1] = colour[1];
-        colours[i+2] = colour[2];/**/
-        /*colours[i]   = random() / (float)RAND_MAX;
-        colours[i+1] = random() / (float)RAND_MAX;
-        colours[i+2] = random() / (float)RAND_MAX;/**/
+        colours[i+2] = colour[2];
     }
 
     eve_createobj(mode, vertices, colours, countv, 2, 3, indices, counti, width, id);
+    return 0;
 }
 
+int mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int * id) {
+    switch (primitive) {
+        case MV_2D_LINES:   break;
+        case MV_2D_POINTS:  break;
+        default:
+            printi("%s %s\n", INFOPRE, "WARNING: invalid primitive, assuming MV_2D_LINES");
+            primitive = MV_2D_LINES;
+    }
+    
+    int steps = (int) ((xmax - xmin) / step);
+    
+    if (primitive == MV_2D_POINTS && steps < 1) {
+        printi("%s Trying to plot %d points. Won't work\n", INFOPRE, steps);
+        return -1;
+    } else
+    if (primitive == MV_2D_LINES && steps < 2) {
+        printi("%s Trying to plot %d points as lines. Won't work\n", INFOPRE, steps);
+        return -1;
+    }
+
+
+    float *vertices = (float *) malloc(sizeof(float) * steps*2);
+    unsigned int *indices = NULL;
+    int i, counti = 0;
+    for (i = 0; i < steps; i++) {
+        vertices[i*2]   = xmin + i * step;
+        vertices[i*2+1] = (float) f(xmin + i * step);
+    }
+
+    if (primitive == MV_2D_POINTS) {
+        indices = (unsigned int *) malloc(sizeof(unsigned int) * steps);
+        for (i = 0; i < steps; i++)
+            indices[i] = i;
+        counti = steps;
+    }
+    else if (primitive == MV_2D_LINES) {
+        counti = (steps-1)*2;
+        indices = (unsigned int *) malloc(sizeof(unsigned int) * counti);
+        for (i = 0; i < steps - 1; i++) {
+            indices[i*2]   = i;
+            indices[i*2+1] = i+1;
+        }
+    }
+
+    return mv_add(primitive, vertices, steps, indices, counti, colour, width, id);
+}
 
 void transform_triangles_in_lines(GLuint ** pindices, unsigned int * pcounti, int countv) {
     /* transform triangles in edges */
@@ -832,8 +868,6 @@ void transform_triangles_in_lines(GLuint ** pindices, unsigned int * pcounti, in
             } else if ((*t)->id == b) break;
         }
     }
-
-    //printf("Found %d unique edges\n", ttitems);
 
     GLuint * tindices = (GLuint *) malloc(sizeof(GLuint) * ttitems * 2);
     int p = 0;

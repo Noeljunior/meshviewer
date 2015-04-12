@@ -66,6 +66,7 @@ void    mv_settranslate(int id, float x, float y);
 void    mv_setrotate(int id, float angle);
 
 int     mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int * id);
+int     mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int * id);
 
 extern float mv_white[];
 extern float mv_gray[];

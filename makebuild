@@ -5,7 +5,7 @@ if [ "$1" == "++" ]; then
     CC="g++";
 fi
 
-CFLAGS="-g -lSDL2 -lGLEW -lGL -lGLU -lm -lpthread -lX11"
+CFLAGS="-g -ansi -Wall -lSDL2 -lGLEW -lGL -lGLU -lm -lpthread"
 COPT="-O2 -march=native -mtune=native"
 
 SOURCE="*.c"
