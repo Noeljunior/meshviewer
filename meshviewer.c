@@ -25,16 +25,13 @@
 
 /* TODO list
 
-    * destroy a plot!
-    * do not return mv_add until var n is defined
-    * a flag so it can receive an colour array-per-vertex
     * update an un object: colour array
-    * DO NOT FREE THE INPUT ARRAYS
-    * add multiple layer support
     * set background colour
     * ZOOM/UNZOOM TO THE CURSOR
     * legend
+    * INFOMF + verbose + quiet
 
+    * A REFACTOR!!
 
     - keybind to std zoom
     - double click to zoom at click
@@ -43,9 +40,18 @@
     - zoom min and zoom max
     - pan min/max
     - write help
-    
+
     - add posibility of passing the borders to set custom colour
     - emit render event after rendering a frame
+
+
+    --------- DONE ---------
+    * destroy a plot!
+    * do not return mv_add until var n is defined
+    * a flag so it can receive an colour array-per-vertex
+    * DO NOT FREE THE INPUT ARRAYS
+    * add multiple layer support
+
 */
 
 /* * * * * * * * * * TYPES * * * * * * * * * */
@@ -219,6 +225,7 @@ void mv_init() {
     ctz = cz = MV_ZOOMDEFAULT; /* TODO make the zoom somekind auto - based on mins maxs? */
     defprog[0] = new_program_default();
     ro_selbox = new_ro_selbox();
+    running = 1;
 }
 
 void mv_init_layers(int maxlayers) {
@@ -227,7 +234,6 @@ void mv_init_layers(int maxlayers) {
 }
 
 void mv_draw() {
-    running = 1;
     SDL_Event event;
 
     ev_emit(EV_RENDER, NULL, NULL);
