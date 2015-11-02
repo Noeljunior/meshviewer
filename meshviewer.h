@@ -46,14 +46,16 @@ typedef enum _MVprimitive {
      */
     MV_2D_POINTS      = 3,
 
-
     MV_2D_TRIANGLES_AS_LINES    = 4,
-
-
     MV_2D_TRIANGLES_AS_POINTS   = 5,
+
+    MV_USE_COLOUR_ARRAY = 1 << 5,   /* reads countv colours from colour */
+
+
 } MVprimitive;
 
 void    mv_start();
+void    mv_wait();
 void    mv_stop();
 
 void    mv_init();

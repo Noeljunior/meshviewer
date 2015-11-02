@@ -24,6 +24,15 @@
 #define KUP             1
 
 /* TODO list
+
+    * destroy a plot!
+    * do not return mv_add until var n is defined
+    * a flag so it can receive an colour array-per-vertex
+    * update an un object: colour array
+    * DO NOT FREE THE INPUT ARRAYS
+    * add multiple layer support
+    * set background colour
+
     - keybind to std zoom
     - double click to zoom at click
     - free everything when stoping
@@ -137,6 +146,10 @@ void            transform_triangles_in_points(GLuint ** pindices, unsigned int *
  * * * * * * * * * * * * * * * * * */
 void mv_start() {
     pthread_create(&renderthread, NULL, inthread, 0);
+}
+
+void mv_wait() {
+    pthread_join(renderthread, NULL);
 }
 
 void mv_stop() {
@@ -343,9 +356,9 @@ void ev_createobj(void* data1, void* data2) {
     totalpoints += obj->counti;
     printi("%s New object added. Now drawing %lld points\n", INFOPRE, totalpoints);
 
-    free(obj->vertices);
+    /*free(obj->vertices);
     free(obj->colours);
-    free(obj->indices);
+    free(obj->indices);*/
 
     if (pthread_mutex_unlock(obj->mutex) != 0)
         printerr("Error while creating a new object: couldn't release the mutex; it's time to a deadlock!");
@@ -740,8 +753,10 @@ void mv_setrotate(int id, float angle) {
 int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int * id) {
     GLenum mode;
 
+    MVprimitive p = primitive & ((1 << 5) -1);
+
     /* Set the GL primitive */
-    switch (primitive) {
+    switch (p) {
         case MV_2D_TRIANGLES:           mode = GL_TRIANGLES; break;
         case MV_2D_LINES:               mode = GL_LINES;     break;
         case MV_2D_POINTS:              mode = GL_POINTS;    break;
@@ -754,18 +769,27 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
     }
 
     /* Transform the indices for minimize the number of drawed elements */
-    if (primitive == MV_2D_TRIANGLES_AS_LINES)
+    if (p == MV_2D_TRIANGLES_AS_LINES)
         transform_triangles_in_lines(&indices, &counti, countv);
-    if (primitive == MV_2D_TRIANGLES_AS_POINTS)
+    if (p == MV_2D_TRIANGLES_AS_POINTS)
         transform_triangles_in_points(&indices, &counti, countv);
 
-    /* Build a colour array for each vertice */
+
     GLfloat * colours = (GLfloat *) malloc(sizeof(GLfloat) * countv * 3);
-    int i;
-    for (i = 0; i < countv * 3; i += 3) {
-        colours[i]   = colour[0];
-        colours[i+1] = colour[1];
-        colours[i+2] = colour[2];
+    if (primitive & MV_USE_COLOUR_ARRAY) {
+        int i;
+        for (i = 0; i < countv * 3; i += 3) {
+            colours[i]   = colour[i];
+            colours[i+1] = colour[i+1];
+            colours[i+2] = colour[i+2];
+        }
+    } else { /* Build a colour array for each vertice */
+        int i;
+        for (i = 0; i < countv * 3; i += 3) {
+            colours[i]   = colour[0];
+            colours[i+1] = colour[1];
+            colours[i+2] = colour[2];
+        }
     }
 
     eve_createobj(mode, vertices, colours, countv, 2, 3, indices, counti, width, id);
