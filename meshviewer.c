@@ -356,10 +356,6 @@ void ev_createobj(void* data1, void* data2) {
     totalpoints += obj->counti;
     printi("%s New object added. Now drawing %lld points\n", INFOPRE, totalpoints);
 
-    /*free(obj->vertices);
-    free(obj->colours);
-    free(obj->indices);*/
-
     if (pthread_mutex_unlock(obj->mutex) != 0)
         printerr("Error while creating a new object: couldn't release the mutex; it's time to a deadlock!");
     free(data1);
@@ -793,6 +789,7 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
     }
 
     eve_createobj(mode, vertices, colours, countv, 2, 3, indices, counti, width, id);
+    free(colours);
     return 0;
 }
 
