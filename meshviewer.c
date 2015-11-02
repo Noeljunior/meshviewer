@@ -13,6 +13,17 @@
 
 #include "meshviewer.h"
 
+#include "infocolour.h"
+
+
+/*
+ *  This file name and color, used in INFO/WARN/ERR msgs
+ */
+static char *MOD = "MSV";
+static char *COL = GREEN;
+
+
+
 #define WINTITLE        "Mesh Viewer"
 #define ERRPRE          "MVERROR:"
 #define printe(...)     fprintf(stderr, __VA_ARGS__)
@@ -100,6 +111,7 @@ int                 fpscount  = 0;          /* FPS counter */
 pthread_t           renderthread;
 unsigned long long  totalpoints = 0;
 int                 MAXLAYERS = 1;
+int                 verbosity = 0;
 
 /* * * * * * * * * * EVENTS * * * * * * * * * */
 void (*ev_callbacks[256]) (void* data1, void* data2);
@@ -157,12 +169,9 @@ void            transform_triangles_in_points(GLuint ** pindices, unsigned int *
 /* * * * * * * * * * * * * * * * * *
  *  THE MESH VIEWER
  * * * * * * * * * * * * * * * * * */
-void mv_start() {
-    pthread_create(&renderthread, NULL, inthread, 0);
-}
-
-void mv_start_layers(int maxlayers) {
+void mv_start(int maxlayers, int verbose) {
     MAXLAYERS = maxlayers > 1 ? maxlayers : 1;
+    verbosity = verbose;
     pthread_create(&renderthread, NULL, inthread, 0);
 }
 
@@ -174,15 +183,19 @@ void mv_stop() {
     running = 0;
 }
 
+void mv_init();
+void mv_draw();
+
 void * inthread(void * none) {
-    printinfo("Working on separated thread");
+    if (verbosity > -1) INFOM("Starting render thread");
     mv_init();
     mv_draw();
-    printinfo("Leaving render thread");
+    if (verbosity > -1) INFOM("Leaving render thread");
     pthread_exit(NULL);
 }
 
 void mv_init() {
+    static char *FUN = "init()";
     /* Init the GL env */
     SDL_Init(SDL_INIT_EVERYTHING);
 
@@ -198,10 +211,10 @@ void mv_init() {
     /* * * * Init GLGlew * * * */
     GLenum result = glewInit();
     if (result != GLEW_OK) {
-        printe("%s %s\n", ERRPRE, "Glew error. Exiting");
+        ERRMF("Some Glew error. Do you have it? Anyway, exiting...");
         exit(-1);
     }
-    /*printi("%s %s %s\n", INFOPRE, "Using OpenGL version", glGetString(GL_VERSION));*/
+    if (verbosity > 0) INFOMF("Using openGL version %s", glGetString(GL_VERSION));
     
     /* * * * Init OpenGL * * * */
     glEnable(GL_DEPTH_TEST | GL_LINE_SMOOTH | GL_POLYGON_SMOOTH | GL_ALPHA_TEST);
@@ -226,11 +239,6 @@ void mv_init() {
     defprog[0] = new_program_default();
     ro_selbox = new_ro_selbox();
     running = 1;
-}
-
-void mv_init_layers(int maxlayers) {
-    MAXLAYERS = maxlayers > 1 ? maxlayers : 1;
-    mv_init();
 }
 
 void mv_draw() {
@@ -358,9 +366,10 @@ typedef struct ev_object {
 } ev_object;
 
 void ev_createobj(void* data1, void* data2) {
+    static char *FUN = "ev_createobj()";
     if (allocatedRO >= MV_MAXOBJECTS) {
         if (data2 != NULL) *((int *)data2) = -1;
-        printerr("Trying to add an object but the list of objects is full");
+        if (verbosity > -1) WARNMF("Trying to add an object but the object list is full (%d objects)", MV_MAXOBJECTS);
         return;
     }
     ev_object * obj = (ev_object *) data1;
@@ -379,19 +388,22 @@ void ev_createobj(void* data1, void* data2) {
     ro->obj->width   = obj->width;
 
     totalpoints += obj->counti;
-    printi("%s New object added. Now drawing %lld points in %d object%s\n", INFOPRE, totalpoints, allocatedRO, allocatedRO == 1 ? "" : "s");
+    if (verbosity > 0) INFOMF("New object added. Now drawing %lld points in %d object%s", totalpoints, allocatedRO, allocatedRO == 1 ? "" : "s");
 
-    if (pthread_mutex_unlock(obj->mutex) != 0)
-        printerr("Error while creating a new object: couldn't release the mutex; it's time to a deadlock!");
+    if (pthread_mutex_unlock(obj->mutex) != 0) {
+        ERRMF("Couldn't release a mutex while creating a new object; it's time to a deadlock!");
+        exit(-1);
+    }
     free(data1);
 }
 
 void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int layer, int * id) {
+    static char *FUN = "eve_createobj()";
     ev_object * obj = (ev_object *) malloc(sizeof(ev_object));
 
     pthread_mutex_t mutex;
     if (pthread_mutex_init(&mutex, NULL) != 0) {
-        printerr("Error while creating a new object: couldn't create the mutex");
+        if (verbosity > -1) WARNMF("Couldn't create a mutex. I'll forget this new object, sorry");
         return;
     }
 
@@ -409,10 +421,12 @@ void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size,
         obj->mutex      = &mutex;
         ev_emit(EV_CREATEOBJ, obj, id);
 
-        if (pthread_mutex_lock(&mutex) != 0)
-            printerr("Error while creating a new object: couldn't wait for the creation of the object");
+        if (pthread_mutex_lock(&mutex) != 0) {
+            ERRMF("Couldn't wait for the object to be created. Unspecified behaviour from now on");
+            exit(-1);
+        }
     } else
-        printerr("Error while creating a new object: couldn't lock mutex");
+        if (verbosity > -1) WARNMF("I can't add a new object without locking a mutex. I'll forget this new object, sorry");
 
     pthread_mutex_destroy(&mutex);
 }
@@ -466,6 +480,7 @@ void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scal
 
 /* SET PROPERTIES EVENT */
 void ev_destroyobj(void* data1, void* data2) {
+    static char *FUN = "ev_destroyobj()";
     /* destroy the object n */
     int n = *((int *) data1);
     free(data1);
@@ -486,7 +501,7 @@ void ev_destroyobj(void* data1, void* data2) {
     free(renderobjs[n]->obj);
     free(renderobjs[n]);
     renderobjs[n] = NULL;
-    //printf("Object %d was destroyed! %d total used\n", n, allocatedRO);
+    if (verbosity > 0) INFOMF("I just destroyed an object (id: %d). %d still in use", n, allocatedRO);
 }
 
 void eve_destroyobj(int n) {
@@ -625,6 +640,7 @@ int add_ro(renderobj * ro) {
 }
 
 program *  new_program(const char * vertexsource, const char * fragmentsource) {
+    static char *FUN = "new_program()";
     GLuint vertexshader = glCreateShader(GL_VERTEX_SHADER);
 
     /* VERTEX SHADER */
@@ -638,7 +654,7 @@ program *  new_program(const char * vertexsource, const char * fragmentsource) {
        glGetShaderiv(vertexshader, GL_INFO_LOG_LENGTH, &maxLength);
        char * vertexInfoLog = (char *)malloc(maxLength);
        glGetShaderInfoLog(vertexshader, maxLength, &maxLength, vertexInfoLog);
-       printe("%s Shader/Vertex: %s\n", ERRPRE, vertexInfoLog);
+       ERRMF("Look at this shader/vertex error: %s", vertexInfoLog);
        free(vertexInfoLog);
        return NULL;
     }
@@ -654,7 +670,7 @@ program *  new_program(const char * vertexsource, const char * fragmentsource) {
        glGetShaderiv(fragmentshader, GL_INFO_LOG_LENGTH, &maxLength);
        char * fragmentInfoLog = (char *)malloc(maxLength);
        glGetShaderInfoLog(fragmentshader, maxLength, &maxLength, fragmentInfoLog);
-       printe("%s Shader/Fragment: %s\n", ERRPRE, fragmentInfoLog);
+       ERRMF("Look at this shader/fragment error: %s", fragmentInfoLog);
        free(fragmentInfoLog);
        return NULL;
     }
@@ -676,7 +692,7 @@ program *  new_program(const char * vertexsource, const char * fragmentsource) {
         glGetProgramiv(shaderprogram, GL_INFO_LOG_LENGTH, &maxLength);
         char * shaderProgramInfoLog = (char *)malloc(maxLength);
         glGetProgramInfoLog(shaderprogram, maxLength, &maxLength, shaderProgramInfoLog);
-        printe("%s Shader/Program: %s\n", ERRPRE, shaderProgramInfoLog);
+        ERRMF("Look at this shader/program error: %s", shaderProgramInfoLog);
         free(shaderProgramInfoLog);
         return NULL;
     }
@@ -833,6 +849,7 @@ void mv_setlayer(int id, int layer) {
 }
 
 int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int layer, int * id) {
+    static char *FUN = "mv_add()";
     if (!running) return 0;
     GLenum mode;
 
@@ -847,7 +864,7 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
         case MV_2D_TRIANGLES_AS_LINES:  mode = GL_LINES;     break;
         case MV_2D_TRIANGLES_AS_POINTS: mode = GL_POINTS;    break;
         default:
-            printerr("Error while creating a new object: bad primitive type");
+            if (verbosity > -1) WARNMF("Have you read the documentation? I can't draw that primitive...");
             return -1;/* NOT IMPLEMENT / BAD ARGUMENT */
     }
 
@@ -882,23 +899,24 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
 }
 
 int mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int layer, int * id) {
+    static char *FUN = "mv_add_plot()";
     if (!running) return 0;
     switch (primitive) {
         case MV_2D_LINES:   break;
         case MV_2D_POINTS:  break;
         default:
-            printi("%s %s\n", INFOPRE, "WARNING: invalid primitive, assuming MV_2D_LINES");
+            if (verbosity > -1) WARNMF("How whould I plot like that? That's a invalid primitive, I'll assume MV_2D_LINES");
             primitive = MV_2D_LINES;
     }
     
     int steps = (int) ((xmax - xmin) / step);
     
     if (primitive == MV_2D_POINTS && steps < 1) {
-        printi("%s Trying to plot %d points. Won't work\n", INFOPRE, steps);
+        if (verbosity > -1) WARNMF("Trying to plot %d points. Won't work", steps);
         return -1;
     } else
     if (primitive == MV_2D_LINES && steps < 2) {
-        printi("%s Trying to plot %d points as lines. Won't work\n", INFOPRE, steps);
+        if (verbosity > -1) WARNMF("Trying to plot %d points as lines. Won't work", steps);
         return -1;
     }
 

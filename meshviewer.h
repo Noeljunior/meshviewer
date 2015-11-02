@@ -54,14 +54,10 @@ typedef enum _MVprimitive {
 
 } MVprimitive;
 
-void    mv_start();
-void    mv_start_layers(int maxlayers);
+void    mv_start(int maxlayers, int verbose);
 void    mv_wait();
 void    mv_stop();
 
-void    mv_init();
-void    mv_init_layers(int maxlayers);
-void    mv_draw();
 
 void    mv_show(int id);
 void    mv_hide(int id);
