@@ -53,6 +53,7 @@ typedef enum _evtype {
     /* objects events */
     EV_CREATEOBJ     = 1,
     EV_SETPROPERTY   = 2,
+    EV_DESTROYOBJ    = 3,
 
     /* render events */
     EV_RENDER         = 100,
@@ -60,7 +61,7 @@ typedef enum _evtype {
 
 typedef struct object {
     GLuint      vao,
-                vbo, cbo, ibo, bbo,
+                vbo, cbo, ibo,
                 ibos;
     GLenum      mode;
     GLfloat     width;
@@ -129,7 +130,8 @@ void            ev_createobj    (void* data1, void* data2);
 void            eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int layer,  int * id);
 void            ev_setproperty  (void* data1, void* data2);
 void            eve_setproperty (ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate, int layer);
-
+void            ev_destroyobj(void* data1, void* data2);
+void            eve_destroyobj(int n);
 
 Uint32          timer_countfps  (Uint32 interval, void* param);
 
@@ -210,6 +212,7 @@ void mv_init() {
     ev_add(EV_RENDER,      ev_renderloop);
     ev_add(EV_CREATEOBJ,   ev_createobj);
     ev_add(EV_SETPROPERTY, ev_setproperty);
+    ev_add(EV_DESTROYOBJ,  ev_destroyobj);
     
     
     /* Prepare the render stuff */
@@ -370,7 +373,7 @@ void ev_createobj(void* data1, void* data2) {
     ro->obj->width   = obj->width;
 
     totalpoints += obj->counti;
-    printi("%s New object added. Now drawing %lld points\n", INFOPRE, totalpoints);
+    printi("%s New object added. Now drawing %lld points in %d object%s\n", INFOPRE, totalpoints, allocatedRO, allocatedRO == 1 ? "" : "s");
 
     if (pthread_mutex_unlock(obj->mutex) != 0)
         printerr("Error while creating a new object: couldn't release the mutex; it's time to a deadlock!");
@@ -440,25 +443,6 @@ void ev_setproperty(void* data1, void* data2) {
     if (sp->change & EV_SP_LAYER) {
         renderobjs[sp->id]->layer = sp->layer;
     }
-
-    /*switch (sp->change) {
-        case EV_SP_VISIBILITY:
-            renderobjs[sp->id]->enable = sp->visibility;
-            break;
-        case EV_SP_SCALE:
-            renderobjs[sp->id]->scale = sp->scale;
-            break;
-        case EV_SP_TRANSLATE:
-            renderobjs[sp->id]->translate[0] = sp->translate[0];
-            renderobjs[sp->id]->translate[1] = sp->translate[1];
-            break;
-        case EV_SP_ROTATE:
-            renderobjs[sp->id]->rotate = sp->rotate;
-        case EV_SP_LAYER:
-            renderobjs[sp->id]->layer = sp->layer;
-            break;
-        default: break;
-    }*/
     free(data1);
 }
 void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate, int layer) {
@@ -473,6 +457,38 @@ void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scal
     obj->layer        = layer;
     ev_emit(EV_SETPROPERTY, obj, NULL);
 }
+
+/* SET PROPERTIES EVENT */
+void ev_destroyobj(void* data1, void* data2) {
+    /* destroy the object n */
+    int n = *((int *) data1);
+    free(data1);
+
+    if (n >= allocatedRO || renderobjs[n] == NULL)
+        return;
+
+    allocatedRO--;
+
+    totalpoints -= renderobjs[n]->obj->ibos;
+
+    /* free the buffers */
+    glDeleteBuffers(1, &(renderobjs[n]->obj->vbo));
+    glDeleteBuffers(1, &(renderobjs[n]->obj->cbo));
+    glDeleteBuffers(1, &(renderobjs[n]->obj->ibo));
+    glDeleteVertexArrays(1, &(renderobjs[n]->obj->vao));
+
+    free(renderobjs[n]->obj);
+    free(renderobjs[n]);
+    renderobjs[n] = NULL;
+    //printf("Object %d was destroyed! %d total used\n", n, allocatedRO);
+}
+
+void eve_destroyobj(int n) {
+    int * pn = (int *) malloc(sizeof(int));
+    *pn = n;
+    ev_emit(EV_DESTROYOBJ, pn, NULL);
+}
+
 /* * * * * * * * * * * * * * * * * *
  *  THE TIMERS
  * * * * * * * * * * * * * * * * * */
@@ -534,7 +550,9 @@ void renderloop() {
     
     int i, j;
     for (j = 0; j < MAXLAYERS; j++) {
-        for (i = 0; i < allocatedRO; i++) {
+        for (i = 0; i < MV_MAXOBJECTS; i++) {
+            if (!renderobjs[i])
+                continue;
             if (MAXLAYERS > 1 && renderobjs[i]->layer != j)
                 continue;
             if (!renderobjs[i]->enable)
@@ -589,9 +607,15 @@ void render_ro(renderobj * ro) {
 }
 
 int add_ro(renderobj * ro) {
-    if (allocatedRO >= MV_MAXOBJECTS) return -1;
-    renderobjs[allocatedRO++] = ro;
-    return allocatedRO - 1;
+    int i;
+    for (i = 0; i < MV_MAXOBJECTS; i++) {
+        if (renderobjs[i] == NULL) {
+            renderobjs[i] = ro;
+            allocatedRO++;
+            return  i;
+        }
+    }
+    return -1;
 }
 
 program *  new_program(const char * vertexsource, const char * fragmentsource) {
@@ -779,6 +803,9 @@ void mv_show(int id) {
 void mv_hide(int id) {
     eve_setproperty(EV_SP_VISIBILITY, id, 0, 0, 0, 0, 0, 0);
 }
+void mv_destroy(int id) {
+    eve_destroyobj(id);
+}
 void mv_setscale(int id, float scale) {
     eve_setproperty(EV_SP_SCALE, id, 0, scale, 0, 0, 0, 0);
 }
@@ -818,14 +845,14 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
 
 
     GLfloat * colours = (GLfloat *) malloc(sizeof(GLfloat) * countv * 3);
-    if (primitive & MV_USE_COLOUR_ARRAY) { printf("MULTICOLOUR\n");
+    if (primitive & MV_USE_COLOUR_ARRAY) {
         int i;
         for (i = 0; i < countv * 3; i += 3) {
             colours[i]   = colour[i];
             colours[i+1] = colour[i+1];
             colours[i+2] = colour[i+2];
         }
-    } else { /* Build a colour array for each vertice */ printf("ONECOLOUR\n");
+    } else { /* Build a colour array for each vertice */
         int i;
         for (i = 0; i < countv * 3; i += 3) {
             colours[i]   = colour[0];

@@ -65,6 +65,7 @@ void    mv_draw();
 
 void    mv_show(int id);
 void    mv_hide(int id);
+void    mv_destroy(int id);
 void    mv_setscale(int id, float scale);
 void    mv_settranslate(int id, float x, float y);
 void    mv_setrotate(int id, float angle);
