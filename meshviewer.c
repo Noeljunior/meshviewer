@@ -32,6 +32,9 @@
     * DO NOT FREE THE INPUT ARRAYS
     * add multiple layer support
     * set background colour
+    * ZOOM/UNZOOM TO THE CURSOR
+    * legend
+
 
     - keybind to std zoom
     - double click to zoom at click
@@ -76,8 +79,9 @@ typedef struct renderobj {
                 translate[2],
                 rotate;
     int         enable;
+    int         layer;
 } renderobj;
-typedef enum ev_esp { EV_SP_VISIBILITY, EV_SP_SCALE, EV_SP_TRANSLATE, EV_SP_ROTATE, } ev_esp;
+typedef enum ev_esp { EV_SP_VISIBILITY, EV_SP_SCALE, EV_SP_TRANSLATE, EV_SP_ROTATE, EV_SP_LAYER } ev_esp;
 
 
 /* * * * * * * * * * GL ENV * * * * * * * * * */
@@ -88,6 +92,7 @@ GLint               curWidth  = MV_WINW,    /* Window size */
 int                 fpscount  = 0;          /* FPS counter */
 pthread_t           renderthread;
 unsigned long long  totalpoints = 0;
+int                 MAXLAYERS = 1;
 
 /* * * * * * * * * * EVENTS * * * * * * * * * */
 void (*ev_callbacks[256]) (void* data1, void* data2);
@@ -121,9 +126,9 @@ void            ev_keyboard     (int type, SDL_Keysym keysym);
 void            ev_mouse        (SDL_Event event);
 void            ev_renderloop   (void* data1, void* data2);
 void            ev_createobj    (void* data1, void* data2);
-void            eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int * id);
+void            eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int layer,  int * id);
 void            ev_setproperty  (void* data1, void* data2);
-void            eve_setproperty (ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate);
+void            eve_setproperty (ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate, int layer);
 
 
 Uint32          timer_countfps  (Uint32 interval, void* param);
@@ -145,6 +150,11 @@ void            transform_triangles_in_points(GLuint ** pindices, unsigned int *
  *  THE MESH VIEWER
  * * * * * * * * * * * * * * * * * */
 void mv_start() {
+    pthread_create(&renderthread, NULL, inthread, 0);
+}
+
+void mv_start_layers(int maxlayers) {
+    MAXLAYERS = maxlayers > 1 ? maxlayers : 1;
     pthread_create(&renderthread, NULL, inthread, 0);
 }
 
@@ -208,6 +218,11 @@ void mv_init() {
     ro_selbox = new_ro_selbox();
 }
 
+void mv_init_layers(int maxlayers) {
+    MAXLAYERS = maxlayers > 1 ? maxlayers : 1;
+    mv_init();
+}
+
 void mv_draw() {
     running = 1;
     SDL_Event event;
@@ -237,12 +252,11 @@ void mv_draw() {
                 }
                 if (event.window.event == SDL_WINDOWEVENT_CLOSE) running = 0;
                 break;
-            case SDL_QUIT:                           running = 0;                        break;
+            case SDL_QUIT:                           running = 0;                          break;
             default: break;
         }
     }
     SDL_Quit();
-
 }
 
 
@@ -330,6 +344,7 @@ typedef struct ev_object {
     GLuint * indices;
     int size, countv, countc, counti;
     GLfloat width;
+    int layer;
     pthread_mutex_t *mutex;
 } ev_object;
 
@@ -350,8 +365,9 @@ void ev_createobj(void* data1, void* data2) {
     ro->translate[0] = 0.0;
     ro->translate[1] = 0.0;
     ro->rotate       = 0.0;
-    ro->enable = 1;
-    ro->obj->width = obj->width;
+    ro->enable       = 1;
+    ro->layer        = obj->layer;
+    ro->obj->width   = obj->width;
 
     totalpoints += obj->counti;
     printi("%s New object added. Now drawing %lld points\n", INFOPRE, totalpoints);
@@ -361,7 +377,7 @@ void ev_createobj(void* data1, void* data2) {
     free(data1);
 }
 
-void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int * id) {
+void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size, int countv, int countc, GLuint * indices, int counti, GLfloat width, int layer, int * id) {
     ev_object * obj = (ev_object *) malloc(sizeof(ev_object));
 
     pthread_mutex_t mutex;
@@ -380,6 +396,7 @@ void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size,
         obj->countc     = countc;
         obj->counti     = counti;
         obj->width      = width;
+        obj->layer      = layer;
         obj->mutex      = &mutex;
         ev_emit(EV_CREATEOBJ, obj, id);
 
@@ -399,13 +416,32 @@ typedef struct ev_property {
     float           scale,
                     translate[2],
                     rotate;
+    int             layer;
 } ev_property;
 
 void ev_setproperty(void* data1, void* data2) {
     ev_property * sp = (ev_property*) data1;
     if (sp->id >= allocatedRO || renderobjs[sp->id] == NULL)
         return;
-    switch (sp->change) {
+
+    if (sp->change & EV_SP_VISIBILITY) {
+        renderobjs[sp->id]->enable = sp->visibility;
+    }
+    if (sp->change & EV_SP_SCALE) {
+        renderobjs[sp->id]->scale = sp->scale;
+    }
+    if (sp->change & EV_SP_TRANSLATE) {
+        renderobjs[sp->id]->translate[0] = sp->translate[0];
+        renderobjs[sp->id]->translate[1] = sp->translate[1];
+    }
+    if (sp->change & EV_SP_ROTATE) {
+        renderobjs[sp->id]->rotate = sp->rotate;
+    }
+    if (sp->change & EV_SP_LAYER) {
+        renderobjs[sp->id]->layer = sp->layer;
+    }
+
+    /*switch (sp->change) {
         case EV_SP_VISIBILITY:
             renderobjs[sp->id]->enable = sp->visibility;
             break;
@@ -418,12 +454,14 @@ void ev_setproperty(void* data1, void* data2) {
             break;
         case EV_SP_ROTATE:
             renderobjs[sp->id]->rotate = sp->rotate;
+        case EV_SP_LAYER:
+            renderobjs[sp->id]->layer = sp->layer;
             break;
-        default: break; /* invalid or not implement property */
-    }
+        default: break;
+    }*/
     free(data1);
 }
-void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate) {
+void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate, int layer) {
     ev_property * obj = (ev_property *) malloc(sizeof(ev_property));
     obj->id           = id;
     obj->change       = change;
@@ -432,6 +470,7 @@ void eve_setproperty(ev_esp change, unsigned int id, char visibility, float scal
     obj->translate[0] = translatex;
     obj->translate[1] = translatey;
     obj->rotate       = rotate;
+    obj->layer        = layer;
     ev_emit(EV_SETPROPERTY, obj, NULL);
 }
 /* * * * * * * * * * * * * * * * * *
@@ -493,11 +532,15 @@ void renderloop() {
     glRotatef(a, 0, 0, 1);/**/
     a += eegg;
     
-    int i;
-    for (i = 0; i < allocatedRO; i++) {
-        if (!renderobjs[i]->enable)
-            continue;
-        render_ro(renderobjs[i]);
+    int i, j;
+    for (j = 0; j < MAXLAYERS; j++) {
+        for (i = 0; i < allocatedRO; i++) {
+            if (MAXLAYERS > 1 && renderobjs[i]->layer != j)
+                continue;
+            if (!renderobjs[i]->enable)
+                continue;
+            render_ro(renderobjs[i]);
+        }
     }
     
     /* SELECTION BOX */
@@ -731,22 +774,25 @@ float mv_yellow[]   = { 1.0, 1.0, 0.0 };
 float mv_cyan[]     = { 0.0, 1.0, 1.0 };
 
 void mv_show(int id) {
-    eve_setproperty(EV_SP_VISIBILITY, id, 1, 0, 0, 0, 0);
+    eve_setproperty(EV_SP_VISIBILITY, id, 1, 0, 0, 0, 0, 0);
 }
 void mv_hide(int id) {
-    eve_setproperty(EV_SP_VISIBILITY, id, 0, 0, 0, 0, 0);
+    eve_setproperty(EV_SP_VISIBILITY, id, 0, 0, 0, 0, 0, 0);
 }
 void mv_setscale(int id, float scale) {
-    eve_setproperty(EV_SP_SCALE, id, 0, scale, 0, 0, 0);
+    eve_setproperty(EV_SP_SCALE, id, 0, scale, 0, 0, 0, 0);
 }
 void mv_settranslate(int id, float x, float y) {
-    eve_setproperty(EV_SP_TRANSLATE, id, 0, 0, x, y, 0);
+    eve_setproperty(EV_SP_TRANSLATE, id, 0, 0, x, y, 0, 0);
 }
 void mv_setrotate(int id, float angle) {
-    eve_setproperty(EV_SP_ROTATE, id, 0, 0, 0, 0, angle);
+    eve_setproperty(EV_SP_ROTATE, id, 0, 0, 0, 0, angle, 0);
+}
+void mv_setlayer(int id, int layer) {
+    eve_setproperty(EV_SP_LAYER, id, 0, 0, 0, 0, 0, layer);
 }
 
-int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int * id) {
+int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int layer, int * id) {
     GLenum mode;
 
     MVprimitive p = primitive & ((1 << 5) -1);
@@ -772,14 +818,14 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
 
 
     GLfloat * colours = (GLfloat *) malloc(sizeof(GLfloat) * countv * 3);
-    if (primitive & MV_USE_COLOUR_ARRAY) {
+    if (primitive & MV_USE_COLOUR_ARRAY) { printf("MULTICOLOUR\n");
         int i;
         for (i = 0; i < countv * 3; i += 3) {
             colours[i]   = colour[i];
             colours[i+1] = colour[i+1];
             colours[i+2] = colour[i+2];
         }
-    } else { /* Build a colour array for each vertice */
+    } else { /* Build a colour array for each vertice */ printf("ONECOLOUR\n");
         int i;
         for (i = 0; i < countv * 3; i += 3) {
             colours[i]   = colour[0];
@@ -788,12 +834,13 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
         }
     }
 
-    eve_createobj(mode, vertices, colours, countv, 2, 3, indices, counti, width, id);
-    free(colours);
+    eve_createobj(mode, vertices, colours, countv, 2, 3, indices, counti, width, layer, id);
+    if (primitive & MV_USE_COLOUR_ARRAY)
+        free(colours);
     return 0;
 }
 
-int mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int * id) {
+int mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int layer, int * id) {
     switch (primitive) {
         case MV_2D_LINES:   break;
         case MV_2D_POINTS:  break;
@@ -837,7 +884,7 @@ int mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, doubl
         }
     }
 
-    return mv_add(primitive, vertices, steps, indices, counti, colour, width, id);
+    return mv_add(primitive, vertices, steps, indices, counti, colour, width, layer, id);
 }
 
 void transform_triangles_in_lines(GLuint ** pindices, unsigned int * pcounti, int countv) {

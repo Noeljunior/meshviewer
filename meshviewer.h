@@ -55,10 +55,12 @@ typedef enum _MVprimitive {
 } MVprimitive;
 
 void    mv_start();
+void    mv_start_layers(int maxlayers);
 void    mv_wait();
 void    mv_stop();
 
 void    mv_init();
+void    mv_init_layers(int maxlayers);
 void    mv_draw();
 
 void    mv_show(int id);
@@ -66,9 +68,10 @@ void    mv_hide(int id);
 void    mv_setscale(int id, float scale);
 void    mv_settranslate(int id, float x, float y);
 void    mv_setrotate(int id, float angle);
+void    mv_setlayer(int id, int layer);
 
-int     mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int * id);
-int     mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int * id);
+int     mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int layer, int * id);
+int     mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int layer, int * id);
 
 extern float mv_white[];
 extern float mv_gray[];
