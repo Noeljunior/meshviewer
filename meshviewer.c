@@ -798,28 +798,36 @@ float mv_yellow[]   = { 1.0, 1.0, 0.0 };
 float mv_cyan[]     = { 0.0, 1.0, 1.0 };
 
 void mv_show(int id) {
+    if (!running) return;
     eve_setproperty(EV_SP_VISIBILITY, id, 1, 0, 0, 0, 0, 0);
 }
 void mv_hide(int id) {
+    if (!running) return;
     eve_setproperty(EV_SP_VISIBILITY, id, 0, 0, 0, 0, 0, 0);
 }
 void mv_destroy(int id) {
+    if (!running) return;
     eve_destroyobj(id);
 }
 void mv_setscale(int id, float scale) {
+    if (!running) return;
     eve_setproperty(EV_SP_SCALE, id, 0, scale, 0, 0, 0, 0);
 }
 void mv_settranslate(int id, float x, float y) {
+    if (!running) return;
     eve_setproperty(EV_SP_TRANSLATE, id, 0, 0, x, y, 0, 0);
 }
 void mv_setrotate(int id, float angle) {
+    if (!running) return;
     eve_setproperty(EV_SP_ROTATE, id, 0, 0, 0, 0, angle, 0);
 }
 void mv_setlayer(int id, int layer) {
+    if (!running) return;
     eve_setproperty(EV_SP_LAYER, id, 0, 0, 0, 0, 0, layer);
 }
 
 int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int layer, int * id) {
+    if (!running) return 0;
     GLenum mode;
 
     MVprimitive p = primitive & ((1 << 5) -1);
@@ -868,6 +876,7 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
 }
 
 int mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int layer, int * id) {
+    if (!running) return 0;
     switch (primitive) {
         case MV_2D_LINES:   break;
         case MV_2D_POINTS:  break;
