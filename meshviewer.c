@@ -986,6 +986,7 @@ void mv_updatecolourarray(int id, float * colour, int size) {
         colours[i+2] = colour[i+2];
     }
     eve_updatebuffer(EV_UP_COLOUR, id, NULL, colours, size);
+    free(colours);
 }
 
 void mv_updatevertexarray(int id, float * vertices, int size) {
@@ -998,6 +999,7 @@ void mv_updatevertexarray(int id, float * vertices, int size) {
         v[i+1] = vertices[i+1];
     }
     eve_updatebuffer(EV_UP_VERTEX, id, v, NULL, size);
+    free(v);
 }
 
 
