@@ -71,7 +71,8 @@ typedef enum _evtype {
     EV_CREATEOBJ     = 1,
     EV_SETPROPERTY   = 2,
     EV_DESTROYOBJ    = 3,
-    EV_UPDATECOLOUR  = 4,
+    EV_UPDATEBUFFER  = 4,
+    
 
     /* render events */
     EV_RENDER         = 100,
@@ -79,8 +80,8 @@ typedef enum _evtype {
 
 typedef struct object {
     GLuint      vao,
-                vbo, cbo, ibo,
-                ibos;
+                vbo,  cbo,  ibo,
+                vbos, cbos, ibos;
     GLenum      mode;
     GLfloat     width;
 } object;
@@ -107,6 +108,11 @@ typedef enum ev_esp {
     EV_SP_ROTATE     = 1 << 3,
     EV_SP_LAYER      = 1 << 4,
 } ev_esp;
+
+typedef enum ev_eup {
+    EV_UP_VERTEX     = 1 << 0,
+    EV_UP_COLOUR     = 1 << 1,
+} ev_eup;
 
 
 /* * * * * * * * * * GL ENV * * * * * * * * * */
@@ -157,8 +163,8 @@ void            ev_setproperty  (void* data1, void* data2);
 void            eve_setproperty (ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate, int layer);
 void            ev_destroyobj(void* data1, void* data2);
 void            eve_destroyobj(int n);
-void            ev_updatecolour(void* data1, void* data2);
-void            eve_updatecolour(int id, GLfloat * colours, int size);
+void            ev_updatebuffer(void* data1, void* data2);
+void            eve_updatebuffer(ev_eup change, int id, GLfloat * vertices, GLfloat * colours, int size);
 
 Uint32          timer_countfps  (Uint32 interval, void* param);
 
@@ -269,7 +275,7 @@ void mv_init() {
     ev_add(EV_CREATEOBJ,    ev_createobj);
     ev_add(EV_SETPROPERTY,  ev_setproperty);
     ev_add(EV_DESTROYOBJ,   ev_destroyobj);
-    ev_add(EV_UPDATECOLOUR, ev_updatecolour);
+    ev_add(EV_UPDATEBUFFER, ev_updatebuffer);
     
     
     /* Prepare the render stuff */
@@ -555,15 +561,15 @@ void eve_destroyobj(int n) {
 
 
 typedef struct ev_updateobject {
-    /*ENUM change;*/
+    ev_eup change;
     GLenum mode;
     GLfloat * vertices, * colours;
     GLuint * indices;
-    int size, countv, countc, counti;
+    int size, sizei;
     pthread_mutex_t *mutex;
 } ev_updateobject;
 
-void ev_updatecolour(void* data1, void* data2) {
+void ev_updatebuffer(void* data1, void* data2) {
     static char *FUN = "ev_updatecolour()";
 
     int n = *((int *) data2);
@@ -577,11 +583,16 @@ void ev_updatecolour(void* data1, void* data2) {
 
 
     glBindVertexArray(bo->vao);
-    glBindBuffer(GL_ARRAY_BUFFER, bo->cbo);
-
-    glBufferSubData(GL_ARRAY_BUFFER, 0, obj->size * obj->countc * sizeof(GLfloat), obj->colours);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    if (obj->change & EV_UP_VERTEX) { /* update verteices */
+        glBindBuffer(GL_ARRAY_BUFFER, bo->vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, obj->size * 2 * sizeof(GLfloat), obj->vertices);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+    if (obj->change & EV_UP_COLOUR) { /* update colours */
+        glBindBuffer(GL_ARRAY_BUFFER, bo->cbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, obj->size * 3 * sizeof(GLfloat), obj->colours);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
     glBindVertexArray(0);
 
 
@@ -593,7 +604,7 @@ void ev_updatecolour(void* data1, void* data2) {
     }
     free(data1);
 }
-void eve_updatecolour(int id, GLfloat * colours, int size) {
+void eve_updatebuffer(ev_eup change, int id, GLfloat * vertices, GLfloat * colours, int size) {
     static char *FUN = "eve_updatecolour()";
     ev_updateobject * obj = (ev_updateobject *) malloc(sizeof(ev_updateobject));
 
@@ -605,16 +616,15 @@ void eve_updatecolour(int id, GLfloat * colours, int size) {
     }
 
     if (pthread_mutex_lock(&mutex) == 0) {
+        obj->change     = change;
         obj->mode       = 0;
-        obj->vertices   = NULL;
+        obj->vertices   = vertices;
         obj->colours    = colours;
         obj->indices    = NULL;
         obj->size       = size;
-        obj->countv     = 0;
-        obj->countc     = 3;
-        obj->counti     = 0;
+        obj->sizei      = 0;
         obj->mutex      = &mutex;
-        ev_emit(EV_UPDATECOLOUR, obj, &id);
+        ev_emit(EV_UPDATEBUFFER, obj, &id);
         
 
         if (pthread_mutex_lock(&mutex) != 0) {
@@ -975,8 +985,27 @@ void mv_updatecolourarray(int id, float * colour, int size) {
         colours[i+1] = colour[i+1];
         colours[i+2] = colour[i+2];
     }
-    eve_updatecolour(id, colours, size);
+    eve_updatebuffer(EV_UP_COLOUR, id, NULL, colours, size);
 }
+
+void mv_updatevertexarray(int id, float * vertices, int size) {
+    if (!running) return;
+    int i;
+
+    GLfloat * v = (GLfloat *) malloc(sizeof(GLfloat) * size * 2);
+    for (i = 0; i < size * 2; i += 2) {
+        v[i]   = vertices[i];
+        v[i+1] = vertices[i+1];
+    }
+    eve_updatebuffer(EV_UP_VERTEX, id, v, NULL, size);
+}
+
+
+
+
+
+
+
 
 int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int layer, int * id) {
     static char *FUN = "mv_add()";
