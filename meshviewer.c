@@ -337,7 +337,7 @@ void ev_emit(int code, void* data1, void* data2) {
 int eegg = 0;
 void ev_keyboard(int type, SDL_Keysym keysym) {
 
-    /*if (type == 1 && modalt) printf("Key%s: %d\n", type == KDOWN ? "down" : "up", keysym.sym);*/
+    if (type == 1 && modalt) printf("Key%s: %d\n", type == KDOWN ? "down" : "up", keysym.sym);
 
     if (keysym.sym == 1073742049 || keysym.sym == 1073742053) modshift = type; /* Shift */
     if (keysym.sym == 1073742048 || keysym.sym == 1073742052) modctrl  = type; /* Control */
@@ -349,6 +349,11 @@ void ev_keyboard(int type, SDL_Keysym keysym) {
     }
     
     if (keysym.sym == 97 && type == KDOWN) { /* A */
+    }
+
+    if (keysym.sym >= 49 && keysym.sym <= 57 && type == KDOWN) { /* 0 */
+        if (renderobjs[keysym.sym - 49] != NULL)
+            renderobjs[keysym.sym - 49]->enable ^= 1;
     }
 }
 
