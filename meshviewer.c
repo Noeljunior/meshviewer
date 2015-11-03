@@ -71,6 +71,7 @@ typedef enum _evtype {
     EV_CREATEOBJ     = 1,
     EV_SETPROPERTY   = 2,
     EV_DESTROYOBJ    = 3,
+    EV_UPDATECOLOUR  = 4,
 
     /* render events */
     EV_RENDER         = 100,
@@ -99,7 +100,13 @@ typedef struct renderobj {
     int         enable;
     int         layer;
 } renderobj;
-typedef enum ev_esp { EV_SP_VISIBILITY, EV_SP_SCALE, EV_SP_TRANSLATE, EV_SP_ROTATE, EV_SP_LAYER } ev_esp;
+typedef enum ev_esp {
+    EV_SP_VISIBILITY = 1 << 0,
+    EV_SP_SCALE      = 1 << 1,
+    EV_SP_TRANSLATE  = 1 << 2,
+    EV_SP_ROTATE     = 1 << 3,
+    EV_SP_LAYER      = 1 << 4,
+} ev_esp;
 
 
 /* * * * * * * * * * GL ENV * * * * * * * * * */
@@ -137,7 +144,7 @@ float               zoom_factor = MV_ZOOMFACTOR;
 
 
 /* * * * * * * * * * HEADERS * * * * * * * * * */
-void *          inthread        (void * none);
+void *          inthread        (void * m);
 void            ev_emit         (int code, void* data1, void* data2);
 void            ev_add          (int code, void (*func) (void*, void*));
 void            ev_remove       (int code);
@@ -150,6 +157,8 @@ void            ev_setproperty  (void* data1, void* data2);
 void            eve_setproperty (ev_esp change, unsigned int id, char visibility, float scale, float translatex, float translatey, float rotate, int layer);
 void            ev_destroyobj(void* data1, void* data2);
 void            eve_destroyobj(int n);
+void            ev_updatecolour(void* data1, void* data2);
+void            eve_updatecolour(int id, GLfloat * colours, int size);
 
 Uint32          timer_countfps  (Uint32 interval, void* param);
 
@@ -170,9 +179,28 @@ void            transform_triangles_in_points(GLuint ** pindices, unsigned int *
  *  THE MESH VIEWER
  * * * * * * * * * * * * * * * * * */
 void mv_start(int maxlayers, int verbose) {
+    static char *FUN = "mv_start()";
     MAXLAYERS = maxlayers > 1 ? maxlayers : 1;
     verbosity = verbose;
-    pthread_create(&renderthread, NULL, inthread, 0);
+
+    pthread_mutex_t mutex;
+    if (pthread_mutex_init(&mutex, NULL) != 0) {
+        if (verbosity > -1) WARNMF("Couldn't create a mutex so there is no meshviewer");
+        return;
+    }
+
+    if (pthread_mutex_lock(&mutex) == 0) {
+        pthread_create(&renderthread, NULL, inthread, &mutex);
+
+        if (pthread_mutex_lock(&mutex) != 0) {
+            ERRMF("Couldn't wait for the object to be created. Unspecified behaviour from now on");
+            exit(-1);
+        }
+    } else {
+        ERRMF("I can't start the meshviewer without locking a mutex. Try again later");
+        exit(-1);
+    }
+    pthread_mutex_destroy(&mutex);
 }
 
 void mv_wait() {
@@ -186,11 +214,19 @@ void mv_stop() {
 void mv_init();
 void mv_draw();
 
-void * inthread(void * none) {
-    if (verbosity > -1) INFOM("Starting render thread");
+void * inthread(void * m) {
+    static char *FUN = "inthread()";
+    if (verbosity > -1) INFOMF("Starting render thread");
     mv_init();
+
+    pthread_mutex_t *mutex = (pthread_mutex_t *) m;
+    if (pthread_mutex_unlock(mutex) != 0) {
+        ERRMF("Couldn't release a mutex while initializing the meshviewer; it's time to a deadlock!");
+        exit(-1);
+    }
+
     mv_draw();
-    if (verbosity > -1) INFOM("Leaving render thread");
+    if (verbosity > -1) INFOMF("Leaving render thread");
     pthread_exit(NULL);
 }
 
@@ -219,6 +255,7 @@ void mv_init() {
     /* * * * Init OpenGL * * * */
     glEnable(GL_DEPTH_TEST | GL_LINE_SMOOTH | GL_POLYGON_SMOOTH | GL_ALPHA_TEST);
     glClearColor(0,0,0,1);
+    //glClearColor(1,1,1,1);
     
     glDepthMask(GL_FALSE);
     glEnable   (GL_BLEND);
@@ -228,10 +265,11 @@ void mv_init() {
     SDL_AddTimer(1000, timer_countfps, 0);
     
     /* SDL Register the events */
-    ev_add(EV_RENDER,      ev_renderloop);
-    ev_add(EV_CREATEOBJ,   ev_createobj);
-    ev_add(EV_SETPROPERTY, ev_setproperty);
-    ev_add(EV_DESTROYOBJ,  ev_destroyobj);
+    ev_add(EV_RENDER,       ev_renderloop);
+    ev_add(EV_CREATEOBJ,    ev_createobj);
+    ev_add(EV_SETPROPERTY,  ev_setproperty);
+    ev_add(EV_DESTROYOBJ,   ev_destroyobj);
+    ev_add(EV_UPDATECOLOUR, ev_updatecolour);
     
     
     /* Prepare the render stuff */
@@ -510,6 +548,81 @@ void eve_destroyobj(int n) {
     ev_emit(EV_DESTROYOBJ, pn, NULL);
 }
 
+
+typedef struct ev_updateobject {
+    /*ENUM change;*/
+    GLenum mode;
+    GLfloat * vertices, * colours;
+    GLuint * indices;
+    int size, countv, countc, counti;
+    pthread_mutex_t *mutex;
+} ev_updateobject;
+
+void ev_updatecolour(void* data1, void* data2) {
+    static char *FUN = "ev_updatecolour()";
+
+    int n = *((int *) data2);
+    if (renderobjs[n] == NULL) {
+        if (verbosity > -1) WARNMF("Trying to update a non-existing object id: %d. Ignoring that request", n);
+        return;
+    }
+    ev_updateobject * obj = (ev_updateobject *) data1;
+
+    object * bo = renderobjs[n]->obj;
+
+
+    glBindVertexArray(bo->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, bo->cbo);
+
+    glBufferSubData(GL_ARRAY_BUFFER, 0, obj->size * obj->countc * sizeof(GLfloat), obj->colours);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+
+    if (verbosity > 0) INFOMF("Object %d successfully updated.", n);
+
+    if (pthread_mutex_unlock(obj->mutex) != 0) {
+        ERRMF("Couldn't release a mutex while updating an object; it's time to a deadlock!");
+        exit(-1);
+    }
+    free(data1);
+}
+void eve_updatecolour(int id, GLfloat * colours, int size) {
+    static char *FUN = "eve_updatecolour()";
+    ev_updateobject * obj = (ev_updateobject *) malloc(sizeof(ev_updateobject));
+
+
+    pthread_mutex_t mutex;
+    if (pthread_mutex_init(&mutex, NULL) != 0) {
+        if (verbosity > -1) WARNMF("Couldn't create a mutex. I'll forget this update, sorry");
+        return;
+    }
+
+    if (pthread_mutex_lock(&mutex) == 0) {
+        obj->mode       = 0;
+        obj->vertices   = NULL;
+        obj->colours    = colours;
+        obj->indices    = NULL;
+        obj->size       = size;
+        obj->countv     = 0;
+        obj->countc     = 3;
+        obj->counti     = 0;
+        obj->mutex      = &mutex;
+        ev_emit(EV_UPDATECOLOUR, obj, &id);
+        
+
+        if (pthread_mutex_lock(&mutex) != 0) {
+            ERRMF("Couldn't wait for the object to be updated. Unspecified behaviour from now on");
+            exit(-1);
+        }
+    } else
+        if (verbosity > -1) WARNMF("I can't update an object without locking a mutex. I'll forget this update, sorry");
+
+    pthread_mutex_destroy(&mutex);
+}
+
+
 /* * * * * * * * * * * * * * * * * *
  *  THE TIMERS
  * * * * * * * * * * * * * * * * * */
@@ -617,7 +730,7 @@ void render_ro(renderobj * ro) {
 
     glPushMatrix();
         glScalef(ro->scale, ro->scale, 1.0);
-        glRotatef(ro->rotate, 0, 0, 1);
+        glRotatef(ro->rotate, 0.0f, 0.0f, 1.0f);
         glTranslatef(ro->translate[0], ro->translate[1], 0.0);
         glDrawElements(ro->obj->mode, ro->obj->ibos, GL_UNSIGNED_INT, NULL);
     glPopMatrix();
@@ -847,10 +960,25 @@ void mv_setlayer(int id, int layer) {
     if (!running) return;
     eve_setproperty(EV_SP_LAYER, id, 0, 0, 0, 0, 0, layer);
 }
+void mv_updatecolourarray(int id, float * colour, int size) {
+    if (!running) return;
+    int i;
+
+    GLfloat * colours = (GLfloat *) malloc(sizeof(GLfloat) * size * 3);
+    for (i = 0; i < size * 3; i += 3) {
+        colours[i]   = colour[i];
+        colours[i+1] = colour[i+1];
+        colours[i+2] = colour[i+2];
+    }
+    eve_updatecolour(id, colours, size);
+}
 
 int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int layer, int * id) {
     static char *FUN = "mv_add()";
-    if (!running) return 0;
+    if (!running) {
+        if (verbosity > -1) WARNMF("The meshviwer should be "BOLD"running"RESET" so a new object can be drawn");
+        return 0;
+    }
     GLenum mode;
 
     MVprimitive p = primitive & ((1 << 5) -1);
@@ -868,7 +996,7 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
             return -1;/* NOT IMPLEMENT / BAD ARGUMENT */
     }
 
-    /* Transform the indices for minimize the number of drawed elements */
+    /* Transform the indices for minimize the number of drawn elements */
     if (p == MV_2D_TRIANGLES_AS_LINES)
         transform_triangles_in_lines(&indices, &counti, countv);
     if (p == MV_2D_TRIANGLES_AS_POINTS)

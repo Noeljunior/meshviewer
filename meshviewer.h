@@ -66,6 +66,7 @@ void    mv_setscale(int id, float scale);
 void    mv_settranslate(int id, float x, float y);
 void    mv_setrotate(int id, float angle);
 void    mv_setlayer(int id, int layer);
+void    mv_updatecolourarray(int id, float * colour, int size);
 
 int     mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigned int * indices, unsigned int counti, float * colour, float width, int layer, int * id);
 int     mv_add_plot(MVprimitive primitive, double (*f)(double x), double xmin, double xmax, double step, float * colour, float width, int layer, int * id);
