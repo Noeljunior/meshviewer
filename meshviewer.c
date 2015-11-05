@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <pthread.h>
+#include <semaphore.h>
 
 /* GLLIBS */
 #include <GL/glew.h>
@@ -232,7 +233,7 @@ void * inthread(void * m) {
     }
 
     mv_draw();
-    if (verbosity > -1) INFOMF("Leaving render thread");
+    if (verbosity > -1) INFOMF("Leaving render thread %d", running);
     pthread_exit(NULL);
 }
 
@@ -405,13 +406,13 @@ void ev_renderloop(void* data1, void* data2) {
 
 /* CREATE OBJECT EVENT  */
 typedef struct ev_object {
-    GLenum mode;
-    GLfloat * vertices, * colours;
-    GLuint * indices;
-    int size, countv, countc, counti;
-    GLfloat width;
-    int layer;
-    pthread_mutex_t *mutex;
+    GLenum              mode;
+    GLfloat             * vertices, * colours;
+    GLuint              *indices;
+    int                 size, countv, countc, counti;
+    GLfloat             width;
+    int                 layer;
+    sem_t               sem;
 } ev_object;
 
 void ev_createobj(void* data1, void* data2) {
@@ -439,8 +440,8 @@ void ev_createobj(void* data1, void* data2) {
     totalpoints += obj->counti;
     if (verbosity > 0) INFOMF("New object added. Now drawing %lld points in %d object%s", totalpoints, allocatedRO, allocatedRO == 1 ? "" : "s");
 
-    if (pthread_mutex_unlock(obj->mutex) != 0) {
-        ERRMF("Couldn't release a mutex while creating a new object; it's time to a deadlock!");
+    if (sem_post(&obj->sem) != 0) {
+        ERRMF("Couldn't release the semaphore while creating a new object; it's time to a deadlock!");
         exit(-1);
     }
     free(data1);
@@ -450,13 +451,12 @@ void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size,
     static char *FUN = "eve_createobj()";
     ev_object * obj = (ev_object *) malloc(sizeof(ev_object));
 
-    pthread_mutex_t mutex;
-    if (pthread_mutex_init(&mutex, NULL) != 0) {
-        if (verbosity > -1) WARNMF("Couldn't create a mutex. I'll forget this new object, sorry");
+    if (sem_init(&obj->sem, 0, 1) != 0) {
+        if (verbosity > -1) WARNMF("Couldn't create a semaphore. I'll forget this new object, sorry");
         return;
     }
 
-    if (pthread_mutex_lock(&mutex) == 0) {
+    if (sem_trywait(&obj->sem) == 0) {
         obj->mode       = mode;
         obj->vertices   = vertices;
         obj->colours    = colours;
@@ -467,17 +467,17 @@ void eve_createobj(GLenum mode, GLfloat * vertices, GLfloat * colours, int size,
         obj->counti     = counti;
         obj->width      = width;
         obj->layer      = layer;
-        obj->mutex      = &mutex;
+
         ev_emit(EV_CREATEOBJ, obj, id);
 
-        if (pthread_mutex_lock(&mutex) != 0) {
-            ERRMF("Couldn't wait for the object to be created. Unspecified behaviour from now on");
+        if (sem_wait(&obj->sem) != 0) { /*timeout TODO*/
+            ERRMF("Couldn't wait for the new object to be created. Unspecified behaviour from now on");
             exit(-1);
         }
     } else
-        if (verbosity > -1) WARNMF("I can't add a new object without locking a mutex. I'll forget this new object, sorry");
+        if (verbosity > -1) WARNMF("I can't create a new object without locking a semaphore. I'll forget this update, sorry");
 
-    pthread_mutex_destroy(&mutex);
+    sem_destroy(&obj->sem);
 }
 
 /* SET PROPERTIES EVENT */
@@ -561,16 +561,16 @@ void eve_destroyobj(int n) {
 
 
 typedef struct ev_updateobject {
-    ev_eup change;
-    GLenum mode;
-    GLfloat * vertices, * colours;
-    GLuint * indices;
-    int size, sizei;
-    pthread_mutex_t *mutex;
+    ev_eup              change;
+    GLenum              mode;
+    GLfloat             *vertices, *colours;
+    GLuint              *indices;
+    int                 size, sizei;
+    sem_t               sem;
 } ev_updateobject;
 
 void ev_updatebuffer(void* data1, void* data2) {
-    static char *FUN = "ev_updatecolour()";
+    static char *FUN = "ev_updatebuffer()";
 
     int n = *((int *) data2);
     if (renderobjs[n] == NULL) {
@@ -596,10 +596,10 @@ void ev_updatebuffer(void* data1, void* data2) {
     glBindVertexArray(0);
 
 
-    if (verbosity > 0) INFOMF("Object %d successfully updated.", n);
+    if (verbosity > 0) INFOMF("Object %d successfully updated", n);
 
-    if (pthread_mutex_unlock(obj->mutex) != 0) {
-        ERRMF("Couldn't release a mutex while updating an object; it's time to a deadlock!");
+    if (sem_post(&obj->sem) != 0) {
+        ERRMF("Couldn't release the semaphore while updating an object; it's time to a deadlock!");
         exit(-1);
     }
     free(data1);
@@ -608,14 +608,12 @@ void eve_updatebuffer(ev_eup change, int id, GLfloat * vertices, GLfloat * colou
     static char *FUN = "eve_updatecolour()";
     ev_updateobject * obj = (ev_updateobject *) malloc(sizeof(ev_updateobject));
 
-
-    pthread_mutex_t mutex;
-    if (pthread_mutex_init(&mutex, NULL) != 0) {
-        if (verbosity > -1) WARNMF("Couldn't create a mutex. I'll forget this update, sorry");
+    if (sem_init(&obj->sem, 0, 1) != 0) {
+        if (verbosity > -1) WARNMF("Couldn't create a semaphore. I'll forget this update, sorry");
         return;
     }
 
-    if (pthread_mutex_lock(&mutex) == 0) {
+    if (sem_trywait(&obj->sem) == 0) {
         obj->change     = change;
         obj->mode       = 0;
         obj->vertices   = vertices;
@@ -623,18 +621,16 @@ void eve_updatebuffer(ev_eup change, int id, GLfloat * vertices, GLfloat * colou
         obj->indices    = NULL;
         obj->size       = size;
         obj->sizei      = 0;
-        obj->mutex      = &mutex;
         ev_emit(EV_UPDATEBUFFER, obj, &id);
-        
 
-        if (pthread_mutex_lock(&mutex) != 0) {
+        if (sem_wait(&obj->sem) != 0) {
             ERRMF("Couldn't wait for the object to be updated. Unspecified behaviour from now on");
             exit(-1);
         }
     } else
         if (verbosity > -1) WARNMF("I can't update an object without locking a mutex. I'll forget this update, sorry");
 
-    pthread_mutex_destroy(&mutex);
+    sem_destroy(&obj->sem);
 }
 
 
@@ -975,7 +971,7 @@ void mv_setlayer(int id, int layer) {
     if (!running) return;
     eve_setproperty(EV_SP_LAYER, id, 0, 0, 0, 0, 0, layer);
 }
-void mv_updatecolourarray(int id, float * colour, int size) {
+void mv_updatecolourarray(int id, float * colour, int size) {  //printf("WILL VERTEX %d\n", running);
     if (!running) return;
     int i;
 
@@ -989,7 +985,7 @@ void mv_updatecolourarray(int id, float * colour, int size) {
     free(colours);
 }
 
-void mv_updatevertexarray(int id, float * vertices, int size) {
+void mv_updatevertexarray(int id, float * vertices, int size) {  //printf("WILL VERTEX %d\n", running);
     if (!running) return;
     int i;
 
@@ -1032,6 +1028,17 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
             return -1;/* NOT IMPLEMENT / BAD ARGUMENT */
     }
 
+    /* compute indices array */
+    int freeid = 0;
+    if (indices == NULL) {
+        counti = countv;
+        indices = (unsigned int *) malloc(sizeof(unsigned int) * counti);
+        int i;
+        for (i = 0; i < counti; i++)
+            indices[i] = i;
+        freeid = 1;
+    }
+
     /* Transform the indices for minimize the number of drawn elements */
     if (p == MV_2D_TRIANGLES_AS_LINES)
         transform_triangles_in_lines(&indices, &counti, countv);
@@ -1059,6 +1066,8 @@ int mv_add(MVprimitive primitive, float * vertices, unsigned int countv, unsigne
     eve_createobj(mode, vertices, colours, countv, 2, 3, indices, counti, width, layer, id);
     if (primitive & MV_USE_COLOUR_ARRAY)
         free(colours);
+    if (freeid)
+        free(indices);
     return 0;
 }
 
